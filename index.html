@@ -58,7 +58,7 @@ input[type=text]{font:16px var(--sans);color:var(--fg);background:var(--panel);b
 .strip{background:var(--tile);border-radius:10px;padding:8px 10px 2px}
 .strip .top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
 .strip .top b{color:var(--fg);font-weight:600}
-#timeline{width:100%;height:92px;display:block}
+#timeline{width:100%;height:100px;display:block}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
@@ -106,7 +106,7 @@ details[open] summary{color:var(--fg)}
     <div class="navrow"><button type="button" id="edit">‹ Change</button></div>
     <div class="head"><div style="min-width:0"><p class="who" id="vWho" hidden></p><h1 id="vTitle"></h1></div><span class="dot" id="status2"><i></i><span id="statusTxt2"></span></span></div>
     <div class="stats" id="stats"></div>
-    <div class="strip"><div class="top"><span id="stripLbl">Share of squares in band by month</span><b id="tlSel"></b></div>
+    <div class="strip"><div class="top"><span id="stripLbl">Squares in band by month</span><b id="tlSel"></b></div>
       <svg id="timeline" role="img" aria-label="Monthly share of sampled squares in the band. Tap a month to show it on the map."></svg></div>
     <div class="mapwrap" id="mapwrap2"></div>
     <div class="legend" id="legend"></div>
@@ -413,7 +413,7 @@ function renderView(){
   $('vTitle').textContent=`${sp.btn} · ${aoiName}`;
   const sw=(c,t)=>`<span><i class="sw" style="background:${FILL[c]}"></i>${t}</span>`;
   $('legend').innerHTML=(isMid()?sw('band',`In-band layer ${fr(sp.lo)} to ${fr(sp.hi)} °F (number = target depth, fm)`):sw('band',`${fr(sp.lo)} to ${fr(sp.hi)} °F`))+`<span><i class="grad"></i>Colder</span>`+sw('warm','Warmer')+`<span><i class="sw" style="border:2px dashed #c9a400;box-sizing:border-box"></i>Your area</span>`;
-  $('stripLbl').textContent=isMid()?'Share of profiled squares with in-band water':'Share of squares in band by month';
+  $('stripLbl').textContent=isMid()?'Squares with in-band water by month':'Squares in band by month';
   drawAOI(); drawCells(); drawTimeline(); statsUI(); cellReadout();
 }
 function selectMonth(key){ if(!monthStats(key).n) return; [yr,mo]=key.split('-').map(Number); sel=null; drawCells(); drawTimeline(); statsUI(); cellReadout(); }
@@ -433,18 +433,18 @@ function statsUI(){
   $('stats').innerHTML=`<div class="stat"><div class="k">${isMid()?'In-band water':'In band'} · ${when}</div><div class="v">${pct}%</div><div class="s">${s.b} of ${s.n} ${isMid()?'profiled ':''}squares</div></div>`+second;
 }
 function drawTimeline(){
-  const el=$('timeline'), w=el.clientWidth||600, h=92, m={l:1,r:1,t:6,b:30};
+  const el=$('timeline'), w=el.clientWidth||600, h=100, m={l:1,r:1,t:22,b:30};
   const tl=d3.select(el).attr('viewBox',`0 0 ${w} ${h}`); tl.selectAll('*').remove();
   const MS=cur().months, keys=[]; if(MS.length){let [y,mm]=MS[0].split('-').map(Number); const [y1,m1]=MS[MS.length-1].split('-').map(Number); while(y<y1||(y===y1&&mm<=m1)){keys.push(y+'-'+mm); mm++; if(mm>12){mm=1;y++}}}
   const stats=new Map(keys.map(k2=>{const s=monthStats(k2);return[k2,s]}));
-  const x=d3.scaleBand().domain(keys).range([m.l,w-m.r]).padding(0.22), y=d3.scaleLinear().domain([0,1]).range([h-m.b,m.t]);
+  const x=d3.scaleBand().domain(keys).range([m.l,w-m.r]).padding(0.22), ymax=Math.max(1,...keys.map(k2=>stats.get(k2).b)), y=d3.scaleLinear().domain([0,ymax]).range([h-m.b,m.t]);
   const cs=getComputedStyle(document.documentElement), muted=cs.getPropertyValue('--muted').trim()||'#888', ln=cs.getPropertyValue('--line').trim()||'#ccc', fg=cs.getPropertyValue('--fg').trim()||'#000';
   const curK=yr+'-'+mo;
   tl.append('line').attr('x1',m.l).attr('x2',w-m.r).attr('y1',y(0)+0.5).attr('y2',y(0)+0.5).attr('stroke',ln);
   const g=tl.selectAll('g.m').data(keys).join('g').attr('class','m').style('cursor',d=>stats.get(d).n?'pointer':null).on('click',(e,d)=>selectMonth(d));
   g.append('rect').attr('x',d=>x(d)-x.step()*x.paddingInner()/2).attr('width',x.step()).attr('y',0).attr('height',h).attr('fill','transparent');
   g.append('rect').attr('x',d=>x(d)).attr('width',x.bandwidth())
-    .attr('y',d=>{const s=stats.get(d);return s.n?Math.min(y(s.b/s.n),y(0)-2):y(0)-1}).attr('height',d=>{const s=stats.get(d);return s.n?Math.max(2,y(0)-y(s.b/s.n)):1}).attr('rx',1.5)
+    .attr('y',d=>{const s=stats.get(d);return s.n?Math.min(y(s.b),y(0)-2):y(0)-1}).attr('height',d=>{const s=stats.get(d);return s.n?Math.max(2,y(0)-y(s.b)):1}).attr('rx',1.5)
     .attr('fill',d=>stats.get(d).n?'#17a37f':ln).attr('opacity',d=>d===curK?1:0.45);
   g.filter(d=>d===curK).append('rect').attr('x',d=>x(d)-2).attr('width',x.bandwidth()+4).attr('y',m.t-4).attr('height',h-m.b-m.t+6).attr('fill','none').attr('stroke',fg).attr('stroke-width',1.5).attr('rx',3);
   const longLbl=x.step()>=24;
@@ -454,7 +454,8 @@ function drawTimeline(){
   const yearTicks=keys.filter((d,i)=>+d.split('-')[1]===1||i===0);
   g.filter(d=>yearTicks.includes(d)).append('text').attr('x',d=>x(d)).attr('y',h-3).attr('font-size',10).attr('fill',muted).attr('font-family','var(--mono)').text(d=>d.split('-')[0]);
   tl.selectAll('line.yr').data(yearTicks.slice(1)).join('line').attr('class','yr').attr('x1',d=>x(d)-x.step()*x.paddingInner()/2).attr('x2',d=>x(d)-x.step()*x.paddingInner()/2).attr('y1',m.t).attr('y2',h-2).attr('stroke',ln);
-  const s=stats.get(curK)||{n:0}; $('tlSel').textContent=`${MO[mo-1]} ${yr}`+(s.n?` · ${Math.round(100*s.b/s.n)}%`:'');
+  const s=stats.get(curK)||{n:0}; $('tlSel').textContent=`${MO[mo-1]} ${yr}`+(s.n?` · ${s.b} square${s.b===1?'':'s'}`:'');
+  if(s.n) g.filter(d=>d===curK).append('text').attr('x',d=>x(d)+x.bandwidth()/2).attr('y',d=>Math.min(y(s.b),y(0)-2)-8).attr('text-anchor','middle').attr('font-size',10).attr('font-weight',600).attr('fill',fg).attr('font-family','var(--mono)').text(s.b);
 }
 function drawCells(){
   dimG.selectAll('*').remove();
