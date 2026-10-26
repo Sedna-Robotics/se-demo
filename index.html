@@ -3,213 +3,494 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
-/* Layout: controls band on top, chart-style map fills the rest, readout and sources beneath. */
+/* Layout: phone-first, two screens sharing one map. Setup = who, species, area, go. Results = two stats, month strip, big map. Notes live in small links at the bottom. */
 :root{
-  --bg:#f3f5f4; --panel:#ffffff; --fg:#14211f; --muted:#5c6b68; --line:#d3dbd8;
+  --bg:#f3f5f4; --panel:#ffffff; --fg:#14211f; --muted:#5c6b68; --line:#d3dbd8; --tile:#e6ecea;
   --accent:#13866a; --onAccent:#ffffff; --live:#13866a; --stale:#a8660b;
   --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1514; --panel:#172120; --fg:#e6eeec; --muted:#9aaba7; --line:#2a3634;
+  --bg:#0f1514; --panel:#172120; --fg:#e6eeec; --muted:#9aaba7; --line:#2a3634; --tile:#1a2524;
   --accent:#2fbf95; --onAccent:#05221a; --live:#3cc89f; --stale:#e3a33b; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1514; --panel:#172120; --fg:#e6eeec; --muted:#9aaba7; --line:#2a3634;
+  --bg:#0f1514; --panel:#172120; --fg:#e6eeec; --muted:#9aaba7; --line:#2a3634; --tile:#1a2524;
   --accent:#2fbf95; --onAccent:#05221a; --live:#3cc89f; --stale:#e3a33b; color-scheme:dark}
 html,body{height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.4}
-.app{display:flex;flex-direction:column;min-height:100%;box-sizing:border-box;gap:10px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1100px;margin:0 auto}
-h1{font-size:19px;font-weight:600;margin:0;text-wrap:balance}
-.sub{font-size:13px;color:var(--muted);margin:2px 0 0;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
-.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-.status i{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
-.status.live{color:var(--live)} .status.live i{background:var(--live)}
-.status.stale{color:var(--stale)} .status.stale i{background:var(--stale)}
-.row{display:flex;flex-wrap:wrap;gap:6px}
-button{font:500 15px var(--sans);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-height:36px;cursor:pointer}
+.app{display:flex;flex-direction:column;min-height:100%;box-sizing:border-box;gap:12px;padding-block:12px 20px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:980px;margin:0 auto}
+.screen{display:flex;flex-direction:column;gap:12px}
+h1{font-size:18px;font-weight:600;margin:0;text-wrap:balance;line-height:1.25}
+.label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 6px}
+.head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.dot{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.dot i{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.dot.live i{background:var(--live)} .dot.stale i{background:var(--stale)} .dot.busy i{background:var(--muted);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.3}}
+button{font:500 15px var(--sans);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 12px;min-height:40px;cursor:pointer}
 button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--onAccent)}
-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button:disabled{opacity:.4;cursor:default}
-.yrs button{flex:1}
-.months button{flex:1 0 calc(16.66% - 6px);padding:6px 0;font-family:var(--mono);font-size:14px}
-.spp button{flex:1 0 calc(25% - 6px);padding:6px 4px;font-size:14px}
-.note{font-size:13px;color:var(--muted);margin:0}
-.note b{color:var(--fg);font-weight:600}
-.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--muted)}
-.legend span{display:inline-flex;align-items:center;gap:6px}
-.sw{width:14px;height:14px;border-radius:3px;display:inline-block}
-.mapwrap{flex:1;min-height:460px;position:relative;border-radius:10px;overflow:hidden;background:#123049}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--onAccent);font-weight:600;min-height:48px;width:100%;font-size:16px}
+.scroller{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.scroller::-webkit-scrollbar{display:none}
+.scroller button{flex:0 0 auto;border-radius:999px;font-size:14px;min-height:38px}
+.scroller .grp{flex:0 0 auto;align-self:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 2px 0 6px}
+.scroller .grp:first-child{padding-left:0}
+input[type=text]{font:16px var(--sans);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-height:44px;box-sizing:border-box;width:100%}
+.mapwrap{position:relative;border-radius:12px;overflow:hidden;background:#123049;height:min(62vh,640px);min-height:340px}
+#mapwrap{height:min(52vh,560px)}
 #map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.mapbtns{position:absolute;right:8px;top:8px;display:flex;gap:6px}
-.mapbtns button{font-size:13px;min-height:34px;padding:6px 10px;background:rgba(255,255,255,.92);color:#14211f;border-color:transparent}
-.read{font-size:15px;min-height:64px}
-.read b{font-weight:600}
+.ov{position:absolute;display:flex;gap:6px}
+.ov button{font-size:13px;min-height:36px;padding:6px 10px;background:rgba(255,255,255,.94);color:#14211f;border-color:transparent;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.ov button[aria-pressed="true"]{background:#13866a;color:#fff}
+.ov.tl{left:8px;top:8px} .ov.tr{right:8px;top:8px}
+.maphint{position:absolute;left:8px;bottom:8px;max-width:62%;font-size:12px;background:rgba(10,33,62,.86);color:#e6eeec;padding:6px 10px;border-radius:8px}
+.maphint:empty{display:none}
+.sum{font-size:14px;color:var(--muted)}
+.sum b{color:var(--fg);font-weight:600}
 .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
-.hint,.src{font-size:12px;color:var(--muted);margin:0}
-.src a{color:var(--muted)}
-@media (min-width:860px){.mapwrap{min-height:620px}}
-@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stat{background:var(--tile);border-radius:10px;padding:10px 12px;min-width:0}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:22px;font-weight:600;line-height:1.2;margin-top:2px}
+.stat .s{font-size:12px;color:var(--muted)}
+.strip{background:var(--tile);border-radius:10px;padding:8px 10px 2px}
+.strip .top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
+.strip .top b{color:var(--fg);font-weight:600}
+#timeline{width:100%;height:76px;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+.grad{width:34px;height:12px;border-radius:3px;display:inline-block;background:linear-gradient(90deg,#5b95d6,#9cc2ea,#d7e7f7)}
+.read{font-size:14px;color:var(--muted);min-height:20px}
+.read b,.read .num{color:var(--fg)}
+.navrow{display:flex;justify-content:space-between;gap:8px}
+.navrow button{font-size:14px}
+.who{font-size:13px;color:var(--muted);margin:0 0 2px}
+.qr{display:flex;gap:12px;align-items:center;background:var(--tile);border-radius:12px;padding:10px 12px}
+.qr #qr{flex:0 0 auto;background:#fff;border-radius:8px;padding:6px;line-height:0}
+.qr #qr svg,.qr #qr img{width:96px;height:96px;display:block}
+.qr .t{font-size:13px;color:var(--muted);min-width:0}
+.qr .t b{display:block;color:var(--fg);font-size:14px;font-weight:600;margin-bottom:2px}
+.qr .url{font-family:var(--mono);font-size:12px;word-break:break-all;color:var(--fg)}
+footer{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px;margin-top:4px}
+footer .links{display:flex;flex-wrap:wrap;gap:4px 16px}
+details summary{list-style:none;cursor:pointer;font-size:13px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;display:inline}
+details summary::-webkit-details-marker{display:none}
+details[open] summary{color:var(--fg)}
+.panel{font-size:13px;color:var(--muted);margin:8px 0 4px;max-width:65ch}
+.panel p{margin:0 0 8px} .panel b{color:var(--fg);font-weight:600}
+.panel a{color:var(--muted)}
+.panel ul{margin:0 0 8px;padding-left:18px} .panel li{margin:0 0 4px}
+@media (min-width:760px){ .stats{grid-template-columns:repeat(3,minmax(0,1fr))} h1{font-size:20px} }
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 </style>
 <div class="app">
-  <div>
-    <h1 id="h1">American lobster temperature band</h1>
-    <p class="sub"><span>Preferred bottom temperature by species · FIShBOT monthly means · depth contours in fathoms</span><span class="status" id="status"><i></i><span id="statusTxt">Loading bottom temperatures</span></span></p>
-  </div>
-  <div class="row spp" id="spp" role="group" aria-label="Species"></div>
-  <p class="note" id="note"></p>
-  <div class="row yrs" id="yrs" role="group" aria-label="Year"></div>
-  <div class="row months" id="mos" role="group" aria-label="Month"></div>
-  <div class="legend" id="legend"></div>
-  <div class="mapwrap"><svg id="map" role="img" aria-label="Shaded seafloor map of New England waters with FIShBOT bottom temperature grid cells"></svg>
-    <div class="mapbtns"><button id="ne" type="button">All New England</button><button id="home" type="button">Outer Cape</button></div></div>
-  <div class="read" id="read" aria-live="polite">Loading bottom temperatures from NOAA ERDDAP.</div>
-  <p class="hint">Pinch or scroll to zoom, drag to pan. Tap a square for its depth and sample count. Counts cover the squares in view.</p>
-  <p class="src">Data: <a href="https://comet.nefsc.noaa.gov/erddap/info/ondeckdata_erddap_4319_ff7a_72eb/index.html" target="_blank" rel="noopener">NOAA NEFSC ERDDAP, FIShBOT</a> (eMOLT, CFRF, Study Fleet, ECOMON and partners) · Bathymetry: GEBCO 2024</p>
+  <section id="setup" class="screen">
+    <div class="head"><h1>Species Temperature Band Map</h1><span class="dot busy" id="status"><i></i><span id="statusTxt">Loading</span></span></div>
+    <div id="recentWrap" hidden><p class="label">Recent</p><div class="scroller" id="recent"></div></div>
+    <div><p class="label"><label for="who">Prepared for</label></p><input id="who" type="text" placeholder="Captain or vessel (optional)" autocomplete="off"></div>
+    <div><p class="label">Species</p><div class="scroller" id="spp" role="group" aria-label="Species"></div></div>
+    <div><p class="label">Area</p><div class="scroller" id="presets" role="group" aria-label="Preset areas"></div></div>
+    <div class="mapwrap" id="mapwrap"><svg id="map" role="img" aria-label="Seafloor map of New England with 1 nautical mile bottom temperature squares"></svg>
+      <div class="ov tl" id="tools"><button type="button" id="tRect">Rectangle</button><button type="button" id="tPoly">Polygon</button><button type="button" id="tDone" hidden>Done</button></div>
+      <div class="ov tr" id="mapbtns"><button type="button" id="fit" aria-label="Zoom to area">Area</button><button type="button" id="ne" aria-label="Show all New England">All</button></div>
+      <div class="maphint" id="maphint"></div></div>
+    <div class="sum" id="aoiRead">Pick an area above or draw one on the map.</div>
+    <button type="button" class="primary" id="go" disabled>Show bottom temperatures</button>
+    <div class="qr"><div id="qr" aria-hidden="true"></div><div class="t"><b>Open on your phone</b>Scan to use this map on the water.<div class="url" id="qrUrl"></div></div></div>
+  </section>
+
+  <section id="view" class="screen" hidden>
+    <div class="navrow"><button type="button" id="edit">‹ Change</button><button type="button" id="newp">Next person</button></div>
+    <div class="head"><div style="min-width:0"><p class="who" id="vWho" hidden></p><h1 id="vTitle"></h1></div><span class="dot" id="status2"><i></i><span id="statusTxt2"></span></span></div>
+    <div class="stats" id="stats"></div>
+    <div class="strip"><div class="top"><span id="stripLbl">Share of squares in band by month</span><b id="tlSel"></b></div>
+      <svg id="timeline" role="img" aria-label="Monthly share of sampled squares in the band. Tap a month to show it on the map."></svg></div>
+    <div class="mapwrap" id="mapwrap2"></div>
+    <div class="legend" id="legend"></div>
+    <div class="read" id="read"></div>
+  </section>
+
+  <footer>
+    <div class="links">
+      <details><summary>Species bands and sources</summary><div class="panel" id="aboutBands"></div></details>
+      <details><summary>About the data</summary><div class="panel">
+        <p><b>1 nm squares.</b> Bottom temperatures come from sensors on commercial fishing gear: <a href="https://erddap.emolt.net/erddap/tabledap/eMOLT_RT.html" target="_blank" rel="noopener">eMOLT</a> and <a href="https://erddap.emolt.net/erddap/tabledap/MCFA_RT.html" target="_blank" rel="noopener">Maine Coast Fishermen's Association</a>, served by ERDDAP. Only readings taken while gear was fishing on or near the bottom are used, after the providers' quality checks.</p>
+        <p>ERDDAP averages readings into squares 1 minute of latitude tall (1 nm) and 0.0225° of longitude wide (about 1 nm at 42° N), by calendar month. A square's number is that month's mean. "Readings" is how many sensor records went into it.</p>
+        <p><b>Midwater species.</b> Water-column profiles come from the same sensors while gear is being set and hauled. ERDDAP averages them by 1 nm square, month and 5 m layer, for the last 12 months. For each square the app interpolates the profile, finds where it is in the species' band, and reports the middle of the thickest in-band layer as the net depth.</p>
+        <p><b>Live updates.</b> The page opens with a saved copy, then asks ERDDAP for the latest two months and swaps them in. Midwater profiles load when you pick a midwater species. The dot at the top shows which you are seeing.</p>
+        <p><b>Depth contours</b> are GEBCO 2024 bathymetry, in fathoms.</p></div></details>
+      <details><summary>How to use</summary><div class="panel"><ul>
+        <li>Pick a species and a preset area, or tap Rectangle or Polygon and draw your own on the map.</li>
+        <li>For a polygon, tap each corner, then tap Done or the first corner again.</li>
+        <li>On the results, tap a month in the strip to change months. Zoom in to see each square's temperature and depth.</li>
+        <li>Use Next person to start fresh for someone else. Recent setups stay on this device for quick switching.</li>
+        <li>The address bar link opens straight to the same view, so you can send it to someone.</li></ul></div></details>
+    </div>
+  </footer>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
-const ERDDAP='https://comet.nefsc.noaa.gov/erddap/tabledap/ondeckdata_erddap_4319_ff7a_72eb.json';
+const SOURCES=['https://erddap.emolt.net/erddap/tabledap/eMOLT_RT','https://erddap.emolt.net/erddap/tabledap/MCFA_RT'];
 const AREA={latMin:40.3,latMax:45.2,lonMin:-74.0,lonMax:-65.5};
-const START=`${new Date().getUTCFullYear()-2}-01-01`;
-const HOME_VIEW=[[-70.02,41.33],[-69.165,42.04]];
+const DLAT=1/60, DLON=0.0225, DZ=5;
+const APP_URL_DEFAULT='https://sedna-robotics.github.io/se-demo/';
+const NE_VIEW=[[-74.0,40.3],[-65.5,45.2]];
 const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const F=c=>c*9/5+32, FM=m=>Math.round(m/1.8288), fr=c=>Math.round(F(c));
 const SP=[
- {id:'lobster',btn:'Lobster',name:'American lobster',lo:12,hi:18,note:'Lab preference near 61 °F; stress above 68 °F. ASMFC; Crossin et al. 1998.'},
- {id:'scallop',btn:'Scallop',name:'Sea scallop',lo:10,hi:15,note:'Best growth 50 to 59 °F in a Gulf of Maine growth study.'},
- {id:'skate',btn:'Skate',name:'Winter skate',lo:5,hi:15,note:'Adults mostly at 41 to 59 °F in NOAA trawl surveys. NOAA EFH.'},
- {id:'dogfish',btn:'Dogfish',name:'Spiny dogfish',lo:6,hi:12,note:'Most abundant below 54 °F; Stellwagen Bank mean 46 °F.'},
- {id:'bsb',btn:'Sea bass',name:'Black sea bass',lo:10,hi:18,note:'Peak catch near 54 °F; habitat declines above 64 °F; head offshore at 50 to 54 °F; stop feeding below 43 °F. MAFMC 2024.'},
- {id:'monk',btn:'Monkfish',name:'Monkfish',lo:4,hi:14,note:'Adults most abundant at 39 to 57 °F in NOAA trawl surveys. EFH source document.'},
- {id:'cod',btn:'Cod',name:'Atlantic cod',lo:7,hi:14,note:'Adults prefer about 45 to 59 °F; southern New England catches mostly below 57 °F.'},
- {id:'fluke',btn:'Fluke',name:'Summer flounder',lo:14,hi:21,note:'From juvenile studies: strong growth at 57 to 70 °F, little below 46 °F. Adults leave inshore in fall. EFH source document.'}
+ {id:'lobster',kind:'bottom',btn:'Lobster',name:'American lobster',lo:12,hi:18,note:'Lab preference near 61 °F; stress above 68 °F.',src:'ASMFC habitat fact sheet; Crossin, Jury and Watson 1998'},
+ {id:'bsb',kind:'bottom',btn:'Sea bass',name:'Black sea bass',lo:10,hi:18,note:'Peak catch near 54 °F; habitat declines above 64 °F; move offshore at 50 to 54 °F; stop feeding below 43 °F.',src:'MAFMC 2024 ecosystem working paper; Slesinger et al. 2019'},
+ {id:'scallop',kind:'bottom',btn:'Scallop',name:'Sea scallop',lo:10,hi:15,note:'Best growth at 50 to 59 °F.',src:'Gulf of Maine scallop growth study, NOAA repository'},
+ {id:'skate',kind:'bottom',btn:'Skate',name:'Winter skate',lo:5,hi:15,note:'Adults mostly at 41 to 59 °F in trawl surveys.',src:'NOAA winter skate EFH description'},
+ {id:'dogfish',kind:'bottom',btn:'Dogfish',name:'Spiny dogfish',lo:6,hi:12,note:'Most abundant below 54 °F; Stellwagen Bank mean 46 °F.',src:'Stellwagen Bank dogfish study, WHOI'},
+ {id:'monk',kind:'bottom',btn:'Monkfish',name:'Monkfish',lo:4,hi:14,note:'Adults most abundant at 39 to 57 °F in trawl surveys.',src:'NOAA EFH source document, goosefish'},
+ {id:'cod',kind:'bottom',btn:'Cod',name:'Atlantic cod',lo:7,hi:14,note:'Adults prefer about 45 to 59 °F; southern New England catches mostly below 57 °F.',src:'Langan, RI DEM; Righton et al. 2010'},
+ {id:'fluke',kind:'bottom',btn:'Fluke',name:'Summer flounder',lo:14,hi:21,note:'Based on juvenile studies: strong growth at 57 to 70 °F.',src:'NOAA EFH source document, summer flounder'},
+ {id:'longfin',kind:'mid',btn:'Longfin squid',name:'Longfin inshore squid',lo:10,hi:14,note:'Optimum 50 to 57 °F, rarely below 46 °F. Moves inshore and shallow in summer, offshore to the shelf edge in winter.',src:'VIMS Multispecies Fisheries Research, longfin inshore squid'},
+ {id:'illex',kind:'mid',btn:'Shortfin squid',name:'Northern shortfin squid (Illex)',lo:9,hi:13,note:'U.S. shelf catches highest at 48 to 55 °F bottom water, with 55 to 68 °F at the surface.',src:'NAFO SCR 98/059'},
+ {id:'mackerel',kind:'mid',btn:'Mackerel',name:'Atlantic mackerel',lo:7,hi:16,note:'Prefers a narrow 45 to 61 °F range; spawning peaks at 55 to 57 °F.',src:'Fisheries and Oceans Canada, Atlantic mackerel profile'},
+ {id:'herring',kind:'mid',btn:'Herring',name:'Atlantic herring',lo:5,hi:9,note:'Adults on Georges Bank preferred 41 to 48 °F; autumn survey catches mostly 43 to 50 °F.',src:'NOAA EFH source document, Atlantic herring (Stevenson and Scott 2005)'},
+ {id:'butterfish',kind:'mid',btn:'Butterfish',name:'Atlantic butterfish',lo:10,hi:14,note:'Spring and fall survey catches peak at 50 to 57 °F; most fish at 45 to 68 °F.',src:'NOAA EFH source document, butterfish (Cross et al. 1999)'}
 ];
-let sp=SP[0];
-const inBand=c=>{const f=fr(c);return f>=fr(sp.lo)&&f<=fr(sp.hi)};
-const cls=c=>{if(inBand(c))return 'band';if(fr(c)>fr(sp.hi))return 'warm';const g=fr(sp.lo)-fr(c);return g<=4?'c2':g<=9?'c1':'c0'};
+const rect=(a,b)=>[[a[0],a[1]],[b[0],a[1]],[b[0],b[1]],[a[0],b[1]]];
+const PRESETS=[
+ {name:'Outer Cape',poly:rect([-70.02,41.33],[-69.165,42.04])},
+ {name:'Stellwagen Bank',poly:rect([-70.55,42.10],[-70.0,42.55])},
+ {name:'Buzzards Bay',poly:rect([-71.15,41.30],[-70.45,41.75])},
+ {name:'Rhode Island Sound',poly:rect([-71.9,41.0],[-70.9,41.5])},
+ {name:'Midcoast Maine',poly:rect([-69.9,43.4],[-68.6,44.2])},
+ {name:'Georges Bank',poly:rect([-68.9,40.9],[-66.0,42.2])}
+];
 const FILL={band:'#17a37f',warm:'#e3a33b',c2:'#5b95d6',c1:'#9cc2ea',c0:'#d7e7f7'};
 const INK={band:'#ffffff',warm:'#3d2604',c2:'#ffffff',c1:'#0b2f55',c0:'#0b2f55'};
-
-let OBS=[], CELLS=new Map(), BYMONTH=new Map(), YEARS=[], yr=null, mo=null, sel=null, B=null;
+const HINT={pan:'',rect:'Drag to draw a rectangle.',poly:'Tap each corner, then Done.'};
 const $=id=>document.getElementById(id);
-const spb=$('spp'), yb=$('yrs'), mb=$('mos');
-SP.forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.s=x.id;b.onclick=()=>{sp=x;draw()};spb.appendChild(b)});
-MO.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.textContent=m;b.dataset.m=i+1;b.onclick=()=>{mo=i+1;sel=null;draw()};mb.appendChild(b)});
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 
-/* ---- projection: equirectangular with cos(lat0) aspect, so the bathymetry rasters map exactly ---- */
+/* ---------- state ---------- */
+let sp=SP[0], aoi=null, aoiName='', who='', screen='setup', tool='pan', draft=[], rectStart=null;
+let yr=null, mo=null, sel=null, B=null, ROWS=[];
+const DS={bottom:{rows:[],cells:new Map(),by:new Map(),months:[],aoi:new Set(),ready:false,status:['busy','Loading']},
+          mid:{rows:[],cells:new Map(),by:new Map(),months:[],aoi:new Set(),ready:false,status:['busy','Not loaded'],loading:null}};
+const cur=()=>DS[sp.kind];
+const isMid=()=>sp.kind==='mid';
+const inBandC=t=>{const f=fr(t);return f>=fr(sp.lo)&&f<=fr(sp.hi)};
+const colder=t=>{const g=fr(sp.lo)-fr(t);return g<=4?'c2':g<=9?'c1':'c0'};
+
+/* evaluate one row for the active species.
+   bottom rows: [y,m,la,lo,tempC,depthM,readings]   midwater rows: [y,m,la,lo,[tempC per 5 m layer]] */
+function ev(o){
+  const k=o[2]+','+o[3];
+  if(sp.kind==='bottom'){ const t=o[4], inb=inBandC(t); return {k,la:o[2],lo:o[3],t,z:o[5],n:o[6],inb,cls:inb?'band':(fr(t)>fr(sp.hi)?'warm':colder(t)),label:fr(t),sub:FM(o[5])+' fm'}; }
+  const pts=[]; o[4].forEach((t,i)=>{if(t!=null)pts.push([i*DZ+DZ/2,t])});
+  const zTop=pts[0][0], zBot=pts[pts.length-1][0];
+  const lo=(fr(sp.lo)-0.5-32)*5/9, hi=(fr(sp.hi)+0.5-32)*5/9;
+  let best=null, run=null;
+  for(let z=zTop; z<=zBot+1e-6; z+=1){
+    let j=0; while(j<pts.length-1&&pts[j+1][0]<z) j++;
+    const a=pts[j], b=pts[Math.min(j+1,pts.length-1)], t=b[0]===a[0]?a[1]:a[1]+(b[1]-a[1])*(z-a[0])/(b[0]-a[0]);
+    const ok=t>=lo&&t<=hi;
+    if(ok){ if(!run) run={top:z,bot:z,sum:0,n:0}; run.bot=z; run.sum+=t; run.n++; }
+    if((!ok||z+1>zBot+1e-6)&&run){ if(!best||run.bot-run.top>best.bot-best.top) best=run; run=null; }
+  }
+  const ts=pts.map(p=>p[1]), tmax=Math.max(...ts), tmin=Math.min(...ts);
+  if(best){ const c=(best.top+best.bot)/2; return {k,la:o[2],lo:o[3],inb:true,cls:'band',top:best.top,bot:best.bot,center:c,t:best.sum/best.n,z:zBot,surf:pts[0][1],deep:pts[pts.length-1][1],label:FM(c),sub:'fm'}; }
+  const cls=tmin>hi?'warm':colder(tmax);
+  return {k,la:o[2],lo:o[3],inb:false,cls,t:tmax,z:zBot,surf:pts[0][1],deep:pts[pts.length-1][1],label:'',sub:''};
+}
+
+/* ---------- projection: equirectangular with cos(lat0) aspect so the relief rasters map exactly ---------- */
 const LAT0=42.7, CX=Math.cos(LAT0*Math.PI/180);
-let S0=1, W0=0, H0=0;
-const NE_VIEW=[[-74.0,40.3],[-65.5,45.2]];
-const P=([lon,lat])=>[(lon-NE_VIEW[0][0])*CX*S0, (NE_VIEW[1][1]-lat)*S0];
+let S0=1, W0=0, H0=0, kRef=1;
+const P=([lon,lat])=>[(lon-NE_VIEW[0][0])*CX*S0,(NE_VIEW[1][1]-lat)*S0];
+const Pinv=([x,y])=>[x/(CX*S0)+NE_VIEW[0][0], NE_VIEW[1][1]-y/S0];
 const svg=d3.select('#map'), root=svg.append('g');
-const baseG=root.append('g'), contG=root.append('g'), gridG=root.append('g'), cellG=root.append('g'), labG=root.append('g'), placeG=root.append('g'), sbG=svg.append('g');
-let k=1, T=d3.zoomIdentity, kHome=1, homeT=d3.zoomIdentity;
-const zoom=d3.zoom().on('zoom',e=>{T=e.transform;k=T.k;root.attr('transform',T);restyle();drawScale()}).on('end',()=>summary());
-svg.call(zoom);
-function fitT(view){
-  const a=P(view[0]), b=P(view[1]), x0=Math.min(a[0],b[0]), x1=Math.max(a[0],b[0]), y0=Math.min(a[1],b[1]), y1=Math.max(a[1],b[1]);
-  const kk=Math.min(W0/(x1-x0),H0/(y1-y0))*0.98;
+const baseG=root.append('g'), contG=root.append('g'), covG=root.append('g'), dimG=root.append('g'), cellG=root.append('g'), labG=root.append('g'), aoiG=root.append('g'), placeG=root.append('g'), sbG=svg.append('g');
+labG.attr('pointer-events','none'); placeG.attr('pointer-events','none'); contG.attr('pointer-events','none'); dimG.attr('pointer-events','none'); covG.attr('pointer-events','none'); sbG.attr('pointer-events','none');
+const line=d3.line();
+let k=1, T=d3.zoomIdentity;
+const zoom=d3.zoom()
+  .filter(e=>tool==='pan'?((!e.ctrlKey||e.type==='wheel')&&!e.button):(e.type==='wheel'||(e.touches&&e.touches.length>1)))
+  .on('zoom',e=>{T=e.transform;k=T.k;root.attr('transform',T);restyle();drawScale()});
+svg.call(zoom).on('dblclick.zoom',null);
+function fitT(view,pad=0.9){
+  const pts=view.map(P), xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  const kk=Math.min(W0/Math.max(x1-x0,1e-6),H0/Math.max(y1-y0,1e-6))*pad;
   return d3.zoomIdentity.translate(W0/2-kk*(x0+x1)/2,H0/2-kk*(y0+y1)/2).scale(kk);
 }
-$('ne').onclick=()=>svg.transition().duration(500).call(zoom.transform,fitT(NE_VIEW));
-$('home').onclick=()=>svg.transition().duration(500).call(zoom.transform,homeT);
+function fitCover(){const a=P(NE_VIEW[0]),b=P(NE_VIEW[1]);const kk=Math.max(W0/Math.abs(b[0]-a[0]),H0/Math.abs(b[1]-a[1]))*0.98;const c=P([-69.6,42.6]);return d3.zoomIdentity.translate(W0/2-kk*c[0],H0/2-kk*c[1]).scale(kk);}
+const goTo=(t,ms=450)=>ms?svg.transition().duration(ms).call(zoom.transform,t):svg.call(zoom.transform,t);
+$('ne').onclick=()=>goTo(fitCover());
+$('fit').onclick=()=>{if(aoi)goTo(fitT(aoi))};
 
 const PLACES=[['Chatham',41.682,-69.96,0,.3],['Provincetown',42.052,-70.186,0,.3],['Nantucket',41.283,-70.10,0,.3],['New Bedford',41.636,-70.93,0,.3],['Boston',42.36,-71.06,0,0],['Gloucester',42.61,-70.66,0,.3],['Portland',43.66,-70.26,0,0],['Point Judith',41.36,-71.48,0,.3],['Montauk',41.07,-71.94,0,.3],['Bar Harbor',44.39,-68.20,0,0],['Georges Bank',41.45,-67.75,1,0],['Gulf of Maine',43.0,-68.6,1,0]];
-function layout(first){
+function layout(){
   const el=$('map'); const w=el.clientWidth, h=el.clientHeight; if(!w||!h) return;
   W0=w; H0=h; svg.attr('viewBox',`0 0 ${w} ${h}`);
-  const a=[(NE_VIEW[1][0]-NE_VIEW[0][0])*CX, NE_VIEW[1][1]-NE_VIEW[0][1]];
-  S0=Math.min(w/a[0],h/a[1]);
-  const ne=fitT(NE_VIEW), hm=fitT(HOME_VIEW);
-  homeT=hm; kHome=hm.k;
-  zoom.scaleExtent([Math.min(1,ne.k)*0.9,kHome*6]).extent([[0,0],[w,h]]);
-  const p0=P([-74.6,45.6]), p1=P([-64.9,39.9]); zoom.translateExtent([p0,p1]);
-  baseG.selectAll('*').remove(); contG.selectAll('*').remove(); placeG.selectAll('*').remove();
+  S0=Math.min(w/((NE_VIEW[1][0]-NE_VIEW[0][0])*CX), h/(NE_VIEW[1][1]-NE_VIEW[0][1]));
+  kRef=fitT(PRESETS[0].poly).k;
+  zoom.scaleExtent([fitT(NE_VIEW,0.98).k*0.9,kRef*14]).extent([[0,0],[w,h]]).translateExtent([P([-74.6,45.6]),P([-64.9,39.9])]);
+  baseG.selectAll('*').remove(); contG.selectAll('*').remove();
   if(B){
     for(const key of ['ne','cape']){
-      const [W,E,S,N]=B[key].bounds, q=P([W,N]), r=P([E,S]);
+      const [Wb,Eb,Sb,Nb]=B[key].bounds, q=P([Wb,Nb]), r=P([Eb,Sb]);
       baseG.append('image').attr('href',B[key].img).attr('x',q[0]).attr('y',q[1]).attr('width',r[0]-q[0]).attr('height',r[1]-q[1]).attr('preserveAspectRatio','none');
     }
-    const line=d3.line();
     baseG.selectAll('path.coast').data(B.coast).join('path').attr('class','coast').attr('d',s=>line(s.map(P))).attr('fill','none').attr('stroke','#f4ead2');
-    contG.selectAll('path.iso').data(B.cont).join('path').attr('class','iso').attr('d',c=>line(c.c.map(P))).attr('fill','none').attr('stroke','#ffffff').attr('stroke-opacity',.4);
-    const labs=[], minD=70/hm.k; B.cont.forEach(c=>{ if(c.c.length<30) return; for(let i=Math.floor(c.c.length/2)%90;i<c.c.length;i+=90){ const p=P(c.c[i]); if(labs.every(l=>Math.hypot(l.p[0]-p[0],l.p[1]-p[1])>minD)) labs.push({fm:c.fm,p}); } });
+    contG.selectAll('path.iso').data(B.cont).join('path').attr('class','iso').attr('d',c=>line(c.c.map(P))).attr('fill','none').attr('stroke','#ffffff').attr('stroke-opacity',.35);
+    const labs=[], minD=80/kRef; B.cont.forEach(c=>{ if(c.c.length<30) return; for(let i=Math.floor(c.c.length/2)%90;i<c.c.length;i+=90){ const p=P(c.c[i]); if(labs.every(l=>Math.hypot(l.p[0]-p[0],l.p[1]-p[1])>minD)) labs.push({fm:c.fm,p}); } });
     contG.selectAll('text.isol').data(labs).join('text').attr('class','isol').attr('x',d=>d.p[0]).attr('y',d=>d.p[1]).attr('dy','0.35em').attr('text-anchor','middle').text(d=>d.fm+' fm');
   }
   placeG.selectAll('text').data(PLACES).join('text').attr('class',d=>d[3]?'place sea':'place').attr('x',d=>P([d[2],d[1]])[0]).attr('y',d=>P([d[2],d[1]])[1]).attr('text-anchor','middle').text(d=>d[0]);
-  drawGrid();
-  if(first) svg.call(zoom.transform,homeT); else { root.attr('transform',T); restyle(); drawScale(); }
-  draw();
+  drawCoverage(); drawAOI(); drawCells();
+  root.attr('transform',T); restyle(); drawScale();
 }
-function cellRect(la,lo){const dLat=0.0630, dLon=0.0630/Math.cos(la*Math.PI/180);const a=P([lo-dLon/2,la+dLat/2]), b=P([lo+dLon/2,la-dLat/2]);return{x:a[0],y:a[1],w:b[0]-a[0],h:b[1]-a[1]}}
-function drawGrid(){
-  const all=[...CELLS.values()].map(c=>({k:c.k,r:cellRect(c.la,c.lo)}));
-  gridG.selectAll('rect').data(all,d=>d.k).join('rect').attr('x',d=>d.r.x).attr('y',d=>d.r.y).attr('width',d=>d.r.w).attr('height',d=>d.r.h)
-    .attr('fill','none').attr('stroke','rgba(255,255,255,0.22)');
+function cellRect(la,lo){const a=P([lo-DLON/2,la+DLAT/2]), b=P([lo+DLON/2,la-DLAT/2]);return{x:a[0],y:a[1],w:b[0]-a[0],h:b[1]-a[1]}}
+const rectPath=r=>`M${r.x.toFixed(2)},${r.y.toFixed(2)}h${r.w.toFixed(2)}v${r.h.toFixed(2)}h${(-r.w).toFixed(2)}Z`;
+function drawCoverage(){
+  covG.selectAll('*').remove(); const d=cur(); if(screen!=='setup'||!d.cells.size) return;
+  let a='', b=''; d.cells.forEach(c=>{const s=rectPath(cellRect(c.la,c.lo)); if(d.aoi.has(c.k)) b+=s; else a+=s;});
+  covG.append('path').attr('d',a).attr('fill','rgba(255,255,255,0.32)');
+  covG.append('path').attr('d',b).attr('fill','rgba(255,216,74,0.85)');
 }
-function niceNm(px){for(const n of [1,2,5,10,20,50,100]) if(n*px>=60) return n; return 100}
+function niceNm(px){for(const n of [1,2,5,10,20,50,100]) if(n*px>=56) return n; return 100}
 function drawScale(){
   sbG.selectAll('*').remove(); if(!W0) return;
-  const pxNm=S0/60*k, nm=niceNm(pxNm), len=nm*pxNm, x1=W0-14, x0=x1-len, y=H0-14;
-  sbG.append('rect').attr('x',x0-10).attr('y',y-24).attr('width',len+20).attr('height',32).attr('rx',6).attr('fill','rgba(255,255,255,.9)');
+  const pxNm=S0/60*k, nm=niceNm(pxNm), len=nm*pxNm, x1=W0-12, x0=x1-len, y=H0-12;
+  sbG.append('rect').attr('x',x0-8).attr('y',y-22).attr('width',len+16).attr('height',30).attr('rx',6).attr('fill','rgba(255,255,255,.92)');
   sbG.append('line').attr('x1',x0).attr('x2',x1).attr('y1',y).attr('y2',y).attr('stroke','#14211f').attr('stroke-width',2);
   [x0,x1].forEach(x=>sbG.append('line').attr('x1',x).attr('x2',x).attr('y1',y-5).attr('y2',y+3).attr('stroke','#14211f').attr('stroke-width',2));
-  sbG.append('text').attr('x',(x0+x1)/2).attr('y',y-9).attr('text-anchor','middle').attr('class','sb').text(nm+' nmi');
+  sbG.append('text').attr('x',(x0+x1)/2).attr('y',y-8).attr('text-anchor','middle').attr('class','sb').text(nm+' nmi');
 }
 function restyle(){
-  cellG.selectAll('rect').attr('stroke-width',d=>(d.k===sel?2.5:0.8)/k);
-  gridG.selectAll('rect').attr('stroke-width',0.6/k).attr('display',k>=kHome*0.35?null:'none');
-  labG.selectAll('text.v').attr('display',d=>d.r.w*k>=18?null:'none').attr('font-size',d=>Math.min(17,d.r.w*k*0.36)/k);
-  labG.selectAll('text.d').attr('display',d=>d.r.w*k>=52?null:'none').attr('font-size',11/k).attr('y',d=>d.r.y+d.r.h-4/k);
+  cellG.selectAll('rect').attr('stroke-width',d=>(d.k===sel?2.5:0.5)/k);
+  labG.selectAll('text.v').attr('display',d=>d.r.w*k>=15?null:'none').attr('font-size',d=>Math.min(16,Math.max(9,d.r.w*k*0.44))/k).attr('stroke-width',2/k);
+  labG.selectAll('text.d').attr('display',d=>d.r.w*k>=54?null:'none').attr('font-size',10.5/k).attr('y',d=>d.r.y+d.r.h-4/k);
   contG.selectAll('path.iso').attr('stroke-width',0.9/k);
-  contG.selectAll('text.isol').attr('font-size',11/k).attr('display',k>=kHome*0.6?null:'none');
+  contG.selectAll('text.isol').attr('font-size',11/k).attr('stroke-width',3/k).attr('display',k>=kRef*0.6?null:'none');
   baseG.selectAll('path.coast').attr('stroke-width',1/k);
-  placeG.selectAll('text').attr('font-size',d=>(d[3]?12:12.5)/k).attr('stroke-width',3/k).attr('display',d=>k>=kHome*d[4]?null:'none');
-  labG.selectAll('text.v').attr('stroke-width',2/k);
-  contG.selectAll('text.isol').attr('stroke-width',3/k);
-}
-function visibleRows(rows){
-  if(!W0) return rows;
-  const x0=-T.x/k, y0=-T.y/k, x1=(W0-T.x)/k, y1=(H0-T.y)/k;
-  return rows.filter(d=>{const cx=d.r.x+d.r.w/2, cy=d.r.y+d.r.h/2; return cx>=x0&&cx<=x1&&cy>=y0&&cy<=y1});
-}
-let ROWS=[];
-function draw(){
-  spb.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s===sp.id));
-  $('h1').textContent=sp.name+' temperature band';
-  $('note').innerHTML=`<b>${fr(sp.lo)} to ${fr(sp.hi)} °F</b> · ${sp.note}`;
-  const sw=(c,t)=>`<span><i class="sw" style="background:${FILL[c]}"></i>${t}</span>`;
-  $('legend').innerHTML=sw('band','In band')+sw('warm','Warmer')+sw('c2','1 to 4 °F colder')+sw('c1','5 to 9 colder')+sw('c0','10+ colder');
-  yb.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.y===yr));
-  mb.querySelectorAll('button').forEach(b=>{const has=BYMONTH.has(yr+'-'+b.dataset.m);b.disabled=!has&&OBS.length>0;b.setAttribute('aria-pressed',+b.dataset.m===mo)});
-  const list=BYMONTH.get(yr+'-'+mo)||[];
-  ROWS=list.map(o=>{const r=cellRect(o[2],o[3]);return{k:o[2]+','+o[3],t:o[4],z:o[5],n:o[6],r}});
-  cellG.selectAll('rect').data(ROWS,d=>d.k).join('rect')
-    .attr('x',d=>d.r.x).attr('y',d=>d.r.y).attr('width',d=>d.r.w).attr('height',d=>d.r.h)
-    .attr('fill',d=>FILL[cls(d.t)]).attr('fill-opacity',0.86)
-    .attr('stroke',d=>d.k===sel?'#ffd84a':'rgba(255,255,255,0.6)')
-    .style('cursor','pointer').on('click',(e,d)=>{sel=d.k;draw()});
-  labG.selectAll('text.v').data(ROWS,d=>d.k).join('text').attr('class','v')
-    .attr('x',d=>d.r.x+d.r.w/2).attr('y',d=>d.r.y+d.r.h/2).attr('dy','0.36em').attr('text-anchor','middle')
-    .attr('fill',d=>INK[cls(d.t)]).attr('font-weight',d=>inBand(d.t)?600:500).text(d=>fr(d.t));
-  labG.selectAll('text.d').data(ROWS,d=>d.k).join('text').attr('class','d')
-    .attr('x',d=>d.r.x+d.r.w/2).attr('text-anchor','middle')
-    .attr('fill',d=>INK[cls(d.t)]).attr('opacity',.8).text(d=>FM(d.z)+' fm');
-  restyle(); summary();
-}
-function summary(){
-  if(!OBS.length) return;
-  const vis=visibleRows(ROWS), inb=vis.filter(d=>inBand(d.t)), dz=inb.map(d=>FM(d.z));
-  let t=`<b>${MO[mo-1]} ${yr}</b>: `+(vis.length?`<span class="num">${inb.length}</span> of <span class="num">${vis.length}</span> sampled squares in view are in the ${sp.btn.toLowerCase()} band`+(dz.length?(Math.min(...dz)===Math.max(...dz)?`, at <span class="num">${dz[0]}</span> fathoms`:`, <span class="num">${Math.min(...dz)}</span> to <span class="num">${Math.max(...dz)}</span> fathoms`):''):'no sampled squares in view this month');
-  const s=ROWS.find(d=>d.k===sel);
-  if(s) t+='<br>'+`Selected: <span class="num">${F(s.t).toFixed(1)} °F</span> at about <span class="num">${FM(s.z)}</span> fathoms, <span class="num">${s.n}</span> day${s.n>1?'s':''} sampled`;
-  $('read').innerHTML=t;
+  placeG.selectAll('text').attr('font-size',d=>(d[3]?12:12.5)/k).attr('stroke-width',3/k).attr('display',d=>k>=kRef*d[4]?null:'none');
+  aoiG.selectAll('path.aoi').attr('stroke-width',2.5/k).attr('stroke-dasharray',screen==='view'?`${8/k} ${5/k}`:null);
+  aoiG.selectAll('path.draft').attr('stroke-width',2/k).attr('stroke-dasharray',`${6/k} ${4/k}`);
+  aoiG.selectAll('circle').attr('r',7/k).attr('stroke-width',2/k);
 }
 
-/* ---- data: live from ERDDAP (JSONP, since ERDDAP sends no CORS header), else the bundled snapshot ---- */
-function erddapUrl(vars,agg){
-  const parts=[vars,`latitude>=${AREA.latMin}`,`latitude<=${AREA.latMax}`,`longitude>=${AREA.lonMin}`,`longitude<=${AREA.lonMax}`,`time>=${START}`,`${agg}("time/1month,latitude,longitude")`];
-  return ERDDAP+'?'+parts.map(p=>encodeURIComponent(p).replace(/%3D/g,'=').replace(/%2C/g,',')).join('&');
+/* ---------- area of interest ---------- */
+function drawAOI(){
+  aoiG.selectAll('*').remove();
+  if(aoi) aoiG.append('path').attr('class','aoi').attr('d',line(aoi.map(P))+'Z').attr('fill',screen==='setup'?'rgba(255,216,74,0.08)':'none').attr('stroke','#ffd84a').attr('pointer-events','none');
+  if(draft.length){
+    aoiG.append('path').attr('class','draft').attr('d',line(draft.map(P))+(tool==='rect'?'Z':'')).attr('fill',tool==='rect'?'rgba(255,216,74,0.14)':'none').attr('stroke','#ffd84a').attr('pointer-events','none');
+    if(tool==='poly') aoiG.selectAll('circle').data(draft).join('circle').attr('cx',d=>P(d)[0]).attr('cy',d=>P(d)[1]).attr('fill','#ffd84a').attr('stroke','#14211f').attr('pointer-events','none');
+  }
+  restyle();
+}
+function aoiCells(poly,cells){const pp=poly.map(P), s=new Set(); cells.forEach(c=>{if(d3.polygonContains(pp,P([c.lo,c.la])))s.add(c.k)}); return s;}
+function refreshAOI(){ for(const d of Object.values(DS)) d.aoi=aoi&&d.ready?aoiCells(aoi,d.cells):new Set(); }
+function areaNm2(poly){return Math.abs(d3.polygonArea(poly.map(P)))/Math.pow(S0/60,2)}
+function setAOI(poly,name){
+  aoi=poly; aoiName=poly?(name||'Custom area'):''; draft=[]; setTool('pan');
+  refreshAOI(); presetsUI(); drawCoverage(); drawAOI(); aoiSummary();
+}
+function aoiSummary(){
+  $('go').textContent=isMid()?'Show net depths':'Show bottom temperatures';
+  if(!aoi){$('aoiRead').textContent='Pick an area above or draw one on the map.';$('go').disabled=true;return}
+  const d=cur(), n=d.aoi.size;
+  $('aoiRead').innerHTML=`<b>${esc(aoiName)}</b> · about <span class="num">${Math.round(areaNm2(aoi)).toLocaleString()}</span> sq nmi`+(d.ready?` · <span class="num">${n.toLocaleString()}</span> ${isMid()?'profiled squares':'squares with data'}`:` · loading ${isMid()?'water-column profiles':'data'}`);
+  $('go').disabled=!d.ready||!n;
+}
+function setTool(t){
+  tool=t; draft=[]; rectStart=null;
+  $('tRect').setAttribute('aria-pressed',t==='rect'); $('tPoly').setAttribute('aria-pressed',t==='poly');
+  $('tDone').hidden=true; $('maphint').textContent=HINT[t];
+  svg.style('cursor',t==='pan'?null:'crosshair');
+  drawAOI();
+}
+$('tRect').onclick=()=>setTool(tool==='rect'?'pan':'rect');
+$('tPoly').onclick=()=>setTool(tool==='poly'?'pan':'poly');
+$('tDone').onclick=()=>finishPoly();
+function finishPoly(){ if(draft.length>=3) setAOI(draft.slice(),'Custom area'); }
+const geoAt=e=>Pinv(d3.pointer(e,root.node()));
+svg.on('pointerdown.draw',e=>{
+  if(screen!=='setup'||tool!=='rect'||!e.isPrimary) return;
+  rectStart=geoAt(e); draft=rect(rectStart,rectStart); try{svg.node().setPointerCapture(e.pointerId)}catch(_){} drawAOI();
+}).on('pointermove.draw',e=>{
+  if(screen!=='setup'||tool!=='rect'||!rectStart) return;
+  draft=rect(rectStart,geoAt(e)); drawAOI();
+}).on('pointerup.draw',e=>{
+  if(screen!=='setup'||tool!=='rect'||!rectStart) return;
+  const a=P(rectStart), b=P(geoAt(e)); rectStart=null;
+  if(Math.abs(a[0]-b[0])*k<8||Math.abs(a[1]-b[1])*k<8){draft=[];drawAOI();return}
+  const xs=draft.map(p=>p[0]), ys=draft.map(p=>p[1]);
+  setAOI(rect([Math.min(...xs),Math.min(...ys)],[Math.max(...xs),Math.max(...ys)]),'Custom area');
+}).on('click.draw',e=>{
+  if(screen!=='setup'||tool!=='poly') return;
+  const g=geoAt(e);
+  if(draft.length>=3){const a=P(draft[0]),b=P(g); if(Math.hypot(a[0]-b[0],a[1]-b[1])*k<18){finishPoly();return}}
+  const last=draft[draft.length-1]; if(last){const a=P(last),b=P(g); if(Math.hypot(a[0]-b[0],a[1]-b[1])*k<4) return;}
+  draft.push(g); $('tDone').hidden=draft.length<3; drawAOI();
+}).on('dblclick.draw',e=>{ if(screen==='setup'&&tool==='poly'){ e.preventDefault(); finishPoly(); } });
+function presetsUI(){
+  const pr=$('presets'); pr.innerHTML='';
+  PRESETS.forEach(p=>{const b=document.createElement('button');b.type='button';b.textContent=p.name;b.setAttribute('aria-pressed',aoiName===p.name);b.onclick=()=>{setAOI(p.poly,p.name);goTo(fitT(p.poly))};pr.appendChild(b)});
+  if(aoi&&!PRESETS.some(p=>p.name===aoiName)){const b=document.createElement('button');b.type='button';b.textContent=aoiName;b.setAttribute('aria-pressed','true');b.onclick=()=>goTo(fitT(aoi));pr.prepend(b);}
+}
+
+/* ---------- species ---------- */
+function setSpecies(x){ sp=x; speciesUI(); if(isMid()) ensureMid(); updateStatus(); drawCoverage(); aoiSummary(); }
+function speciesUI(){
+  const spb=$('spp'); spb.innerHTML='';
+  let lastKind=null;
+  SP.forEach(x=>{
+    if(x.kind!==lastKind){ const s=document.createElement('span'); s.className='grp'; s.textContent=x.kind==='mid'?'Midwater':'Bottom'; spb.appendChild(s); lastKind=x.kind; }
+    const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.s=x.id;b.setAttribute('aria-pressed',x.id===sp.id);b.onclick=()=>setSpecies(x);spb.appendChild(b)});
+}
+$('aboutBands').innerHTML='<p>Each band is the temperature range where research finds the species most often or doing best. <b>Bottom species</b> are matched against each square\'s monthly mean bottom temperature. <b>Midwater species</b> are matched against the water column: a square is green when some layer of its monthly mean profile is in the band, and its number is the middle of the thickest in-band layer, in fathoms. That is the suggested net depth.</p><ul>'+
+  SP.map(s=>`<li><b>${s.name}, ${fr(s.lo)} to ${fr(s.hi)} °F</b> (${s.kind==='mid'?'midwater':'bottom'}). ${s.note} Source: ${s.src}.</li>`).join('')+'</ul>';
+
+/* ---------- recent setups, for switching between people during a demo ---------- */
+function recentUI(){
+  const list=store.get('stbm.recent')||[], r=$('recent'); r.innerHTML='';
+  $('recentWrap').hidden=!list.length;
+  list.forEach(s=>{const b=document.createElement('button');b.type='button';
+    const S=SP.find(x=>x.id===s.sp)||SP[0];
+    b.textContent=(s.who?s.who+' · ':'')+S.btn+' · '+s.name; b.onclick=async()=>{applySetup(s);if(isMid())await ensureMid();openView()}; r.appendChild(b)});
+}
+function saveRecent(){
+  const s={who,sp:sp.id,name:aoiName,poly:aoi.map(p=>[+p[0].toFixed(4),+p[1].toFixed(4)])};
+  const list=(store.get('stbm.recent')||[]).filter(x=>!(x.who===s.who&&x.sp===s.sp&&x.name===s.name));
+  list.unshift(s); store.set('stbm.recent',list.slice(0,8));
+}
+function applySetup(s){ who=s.who||''; $('who').value=who; sp=SP.find(x=>x.id===s.sp)||SP[0]; speciesUI(); if(isMid()) ensureMid(); setAOI(s.poly,s.name); updateStatus(); }
+
+/* ---------- screens ---------- */
+function showScreen(name){
+  screen=name; sel=null;
+  $('setup').hidden=name!=='setup'; $('view').hidden=name!=='view';
+  const host=$(name==='setup'?'mapwrap':'mapwrap2');
+  host.prepend($('map')); host.appendChild($('mapbtns'));
+  if(name==='setup'){ host.appendChild($('tools')); host.appendChild($('maphint')); }
+  layout();
+}
+function openView(){
+  if(!aoi||!cur().ready) return;
+  who=$('who').value.trim(); saveRecent(); setTool('pan');
+  showScreen('view'); setHash();
+  pickDefaultMonth(); renderView();
+  goTo(fitT(aoi),0);
+  window.scrollTo({top:0});
+}
+$('go').onclick=openView;
+$('edit').onclick=()=>{showScreen('setup');recentUI();goTo(fitT(aoi),0);window.scrollTo({top:0});};
+$('newp').onclick=()=>{who='';$('who').value='';sp=SP[0];speciesUI();setAOI(null,'');updateStatus();showScreen('setup');recentUI();goTo(fitCover(),0);clearHash();window.scrollTo({top:0});};
+function setHash(){try{const s={w:who,s:sp.id,n:aoiName,p:aoi.map(p=>[+p[0].toFixed(3),+p[1].toFixed(3)])};history.replaceState(null,'','#v='+encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(s))))))}catch(e){}}
+function clearHash(){try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}
+function readHash(){try{const m=location.hash.match(/^#v=(.+)$/);if(!m)return null;const s=JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1])))));return{who:s.w,sp:s.s,name:s.n,poly:s.p}}catch(e){return null}}
+
+/* ---------- results ---------- */
+function monthEval(key){
+  const d=cur(), list=d.by.get(key)||[]; const out=[];
+  list.forEach(o=>{const kk=o[2]+','+o[3]; if(d.aoi.has(kk)) out.push(ev(o));});
+  return out;
+}
+function monthStats(key){ const e=monthEval(key); const b=e.filter(x=>x.inb); return {n:e.length,b:b.length,e,bands:b}; }
+function pickDefaultMonth(){
+  const keys=cur().months.slice().reverse(), hit=keys.find(k2=>monthStats(k2).n>0)||keys[0];
+  if(hit)[yr,mo]=hit.split('-').map(Number);
+}
+function renderView(){
+  if(!cur().ready||!aoi) return;
+  $('vWho').hidden=!who; $('vWho').textContent=who;
+  $('vTitle').textContent=`${sp.btn} · ${aoiName}`;
+  const sw=(c,t)=>`<span><i class="sw" style="background:${FILL[c]}"></i>${t}</span>`;
+  $('legend').innerHTML=(isMid()?sw('band',`In-band layer ${fr(sp.lo)} to ${fr(sp.hi)} °F (number = net depth, fm)`):sw('band',`${fr(sp.lo)} to ${fr(sp.hi)} °F`))+`<span><i class="grad"></i>Colder</span>`+sw('warm','Warmer')+`<span><i class="sw" style="border:2px dashed #c9a400;box-sizing:border-box"></i>Your area</span>`;
+  $('stripLbl').textContent=isMid()?'Share of profiled squares with in-band water':'Share of squares in band by month';
+  drawAOI(); drawCells(); drawTimeline(); statsUI(); cellReadout();
+}
+function selectMonth(key){ if(!monthStats(key).n) return; [yr,mo]=key.split('-').map(Number); sel=null; drawCells(); drawTimeline(); statsUI(); cellReadout(); }
+const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:null};
+function statsUI(){
+  const key=yr+'-'+mo, s=monthStats(key);
+  const latest=cur().months.slice().reverse().find(k2=>monthStats(k2).n>0);
+  const pct=s.n?Math.round(100*s.b/s.n):0, when=`${MO[mo-1]} ${yr}${key===latest?' (latest)':''}`;
+  let second;
+  if(isMid()){
+    const c=s.bands.map(x=>FM(x.center)), m=med(c);
+    second=`<div class="stat"><div class="k">Net depth</div><div class="v">${m==null?'None':m+' fm'}</div><div class="s">${c.length?`Median of squares · range ${Math.min(...c)} to ${Math.max(...c)} fm`:'No in-band water this month'}</div></div>`;
+  } else {
+    const inb=s.bands.map(x=>FM(x.z)), mean=s.n?s.e.reduce((a,x)=>a+x.t,0)/s.n:null;
+    second=`<div class="stat"><div class="k">Band depth</div><div class="v">${inb.length?(Math.min(...inb)===Math.max(...inb)?inb[0]+' fm':Math.min(...inb)+' to '+Math.max(...inb)+' fm'):'None'}</div><div class="s">Area mean ${mean==null?'n/a':F(mean).toFixed(1)+' °F'}</div></div>`;
+  }
+  $('stats').innerHTML=`<div class="stat"><div class="k">${isMid()?'In-band water':'In band'} · ${when}</div><div class="v">${pct}%</div><div class="s">${s.b} of ${s.n} ${isMid()?'profiled ':''}squares</div></div>`+second;
+}
+function drawTimeline(){
+  const el=$('timeline'), w=el.clientWidth||600, h=76, m={l:1,r:1,t:6,b:18};
+  const tl=d3.select(el).attr('viewBox',`0 0 ${w} ${h}`); tl.selectAll('*').remove();
+  const MS=cur().months, keys=[]; if(MS.length){let [y,mm]=MS[0].split('-').map(Number); const [y1,m1]=MS[MS.length-1].split('-').map(Number); while(y<y1||(y===y1&&mm<=m1)){keys.push(y+'-'+mm); mm++; if(mm>12){mm=1;y++}}}
+  const stats=new Map(keys.map(k2=>{const s=monthStats(k2);return[k2,s]}));
+  const x=d3.scaleBand().domain(keys).range([m.l,w-m.r]).padding(0.22), y=d3.scaleLinear().domain([0,1]).range([h-m.b,m.t]);
+  const cs=getComputedStyle(document.documentElement), muted=cs.getPropertyValue('--muted').trim()||'#888', ln=cs.getPropertyValue('--line').trim()||'#ccc', fg=cs.getPropertyValue('--fg').trim()||'#000';
+  const curK=yr+'-'+mo;
+  tl.append('line').attr('x1',m.l).attr('x2',w-m.r).attr('y1',y(0)+0.5).attr('y2',y(0)+0.5).attr('stroke',ln);
+  const g=tl.selectAll('g.m').data(keys).join('g').attr('class','m').style('cursor',d=>stats.get(d).n?'pointer':null).on('click',(e,d)=>selectMonth(d));
+  g.append('rect').attr('x',d=>x(d)-x.step()*x.paddingInner()/2).attr('width',x.step()).attr('y',0).attr('height',h).attr('fill','transparent');
+  g.append('rect').attr('x',d=>x(d)).attr('width',x.bandwidth())
+    .attr('y',d=>{const s=stats.get(d);return s.n?Math.min(y(s.b/s.n),y(0)-2):y(0)-1}).attr('height',d=>{const s=stats.get(d);return s.n?Math.max(2,y(0)-y(s.b/s.n)):1}).attr('rx',1.5)
+    .attr('fill',d=>stats.get(d).n?'#17a37f':ln).attr('opacity',d=>d===curK?1:0.45);
+  g.filter(d=>d===curK).append('rect').attr('x',d=>x(d)-2).attr('width',x.bandwidth()+4).attr('y',m.t-4).attr('height',h-m.b-m.t+6).attr('fill','none').attr('stroke',fg).attr('stroke-width',1.5).attr('rx',3);
+  const yearTicks=keys.filter((d,i)=>+d.split('-')[1]===1||i===0);
+  g.filter(d=>yearTicks.includes(d)).append('text').attr('x',d=>x(d)).attr('y',h-5).attr('font-size',10).attr('fill',muted).attr('font-family','var(--mono)').text(d=>{const [yy,mm]=d.split('-');return +mm===1?yy:MO[mm-1]+' '+yy.slice(2)});
+  const s=stats.get(curK)||{n:0}; $('tlSel').textContent=`${MO[mo-1]} ${yr}`+(s.n?` · ${Math.round(100*s.b/s.n)}%`:'');
+}
+function drawCells(){
+  dimG.selectAll('*').remove();
+  if(screen!=='view'){ROWS=[];cellG.selectAll('rect').remove();labG.selectAll('text').remove();return}
+  const d=cur(), list=d.by.get(yr+'-'+mo)||[];
+  ROWS=[]; const dim={};
+  list.forEach(o=>{const e=ev(o); e.r=cellRect(o[2],o[3]);
+    if(d.aoi.has(e.k)) ROWS.push(e); else dim[e.cls]=(dim[e.cls]||'')+rectPath(e.r);});
+  Object.entries(dim).forEach(([c,p])=>dimG.append('path').attr('d',p).attr('fill',FILL[c]).attr('fill-opacity',0.22));
+  cellG.selectAll('rect').data(ROWS,d2=>d2.k).join('rect')
+    .attr('x',d2=>d2.r.x).attr('y',d2=>d2.r.y).attr('width',d2=>d2.r.w).attr('height',d2=>d2.r.h)
+    .attr('fill',d2=>FILL[d2.cls]).attr('fill-opacity',0.92)
+    .attr('stroke',d2=>d2.k===sel?'#ffd84a':'rgba(10,33,62,0.35)')
+    .style('cursor','pointer').on('click',(e,d2)=>{sel=d2.k;drawCells();cellReadout()});
+  const lab=ROWS.filter(r=>r.label!=='');
+  labG.selectAll('text.v').data(lab,d2=>d2.k).join('text').attr('class','v')
+    .attr('x',d2=>d2.r.x+d2.r.w/2).attr('y',d2=>d2.r.y+d2.r.h/2).attr('dy','0.36em').attr('text-anchor','middle')
+    .attr('fill',d2=>INK[d2.cls]).attr('font-weight',d2=>d2.inb?600:500).text(d2=>d2.label);
+  labG.selectAll('text.d').data(lab,d2=>d2.k).join('text').attr('class','d')
+    .attr('x',d2=>d2.r.x+d2.r.w/2).attr('text-anchor','middle').attr('fill',d2=>INK[d2.cls]).attr('opacity',.8).text(d2=>d2.sub);
+  restyle();
+}
+function cellReadout(){
+  const s=ROWS.find(d=>d.k===sel);
+  if(!s){ $('read').textContent=isMid()?'Tap a square for its in-band layer and water column. Zoom in to see net depths.':'Tap a square for its temperature, depth and readings. Zoom in to see the numbers.'; return; }
+  if(isMid()) $('read').innerHTML=s.inb?`In band from <b class="num">${FM(s.top)} to ${FM(s.bot)} fm</b>, set the net near <b class="num">${FM(s.center)} fm</b> (about ${F(s.t).toFixed(0)} °F). Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F · ${MO[mo-1]} ${yr}`
+      :`No in-band layer in ${MO[mo-1]} ${yr}. Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F.`;
+  else $('read').innerHTML=`<b class="num">${F(s.t).toFixed(1)} °F</b> at about <span class="num">${FM(s.z)}</span> fm · <span class="num">${s.n.toLocaleString()}</span> readings in ${MO[mo-1]} ${yr}`;
+}
+
+/* ---------- data: saved copy first, then the latest months live from ERDDAP via JSONP (no CORS headers there) ---------- */
+function updateStatus(){ const [c,txt]=cur().status; for(const [a,b] of [['status','statusTxt'],['status2','statusTxt2']]){ $(a).className='dot '+c; $(b).textContent=txt; } }
+function setStatus(kind,c,txt){ DS[kind].status=[c,txt]; if(sp.kind===kind) updateStatus(); }
+function ingest(kind,rows){
+  const d=DS[kind]; d.rows=rows; d.cells=new Map(); d.by=new Map();
+  rows.forEach(o=>{const key=o[2]+','+o[3]; if(!d.cells.has(key)) d.cells.set(key,{k:key,la:o[2],lo:o[3]});
+    const mk=o[0]+'-'+o[1]; if(!d.by.has(mk)) d.by.set(mk,[]); d.by.get(mk).push(o)});
+  d.months=[...d.by.keys()].sort((a,b)=>{const [ya,ma]=a.split('-').map(Number),[yb,mb]=b.split('-').map(Number);return ya*12+ma-(yb*12+mb)});
+  d.ready=true; refreshAOI();
+  if(sp.kind===kind){ drawCoverage(); aoiSummary(); if(screen==='view'){ if(!monthStats(yr+'-'+mo).n) pickDefaultMonth(); renderView(); } }
+}
+function erddapUrl(base,vars,cons,agg){
+  const parts=[vars,`latitude>=${AREA.latMin}`,`latitude<=${AREA.latMax}`,`longitude>=${AREA.lonMin}`,`longitude<=${AREA.lonMax}`,...cons,agg];
+  return base+'.json?'+parts.map(p=>encodeURIComponent(p).replace(/%3D/g,'=').replace(/%2C/g,',').replace(/%2F/g,'/')).join('&');
 }
 function jsonp(url,ms){
   return new Promise((res,rej)=>{
@@ -221,31 +502,48 @@ function jsonp(url,ms){
     s.src=url+'&.jsonp='+cb; document.head.appendChild(s);
   });
 }
-async function loadLive(){
-  const [m,c]=await Promise.all([jsonp(erddapUrl('time,latitude,longitude,depth,temperature','orderByMean'),30000),
-                                 jsonp(erddapUrl('time,latitude,longitude,temperature','orderByCount'),30000)]);
-  const cnt=new Map(); c.table.rows.forEach(r=>cnt.set(r[0]+'|'+(+r[1]).toFixed(4)+'|'+(+r[2]).toFixed(4),r[3]));
-  const obs=m.table.rows.filter(r=>r[4]!=null).map(r=>{const la=+(+r[1]).toFixed(4), lo=+(+r[2]).toFixed(4);
-    return [+r[0].slice(0,4),+r[0].slice(5,7),la,lo,+(+r[4]).toFixed(2),Math.round(r[3]),cnt.get(r[0]+'|'+la.toFixed(4)+'|'+lo.toFixed(4))||1]});
-  if(!obs.length) throw new Error('empty');
-  return {obs,fetched:new Date().toISOString(),live:true};
+const cutoffOf=months=>{ if(!months.length) return null; const [y,m]=months[months.length-1].split('-').map(Number); return new Date(Date.UTC(y,m-2,1)).toISOString().slice(0,10); };
+async function liveBottom(t0){
+  const acc=new Map(), grp=`("time/1month,latitude/${DLAT.toFixed(6)},longitude/${DLON}")`, cons=[`time>=${t0}`,'segment_type=3'];
+  const res=await Promise.allSettled(SOURCES.map(async base=>{
+    const [m,c]=await Promise.all([jsonp(erddapUrl(base,'time,latitude,longitude,depth,temperature',cons,'orderByMean'+grp),45000),jsonp(erddapUrl(base,'time,latitude,longitude,depth,temperature',cons,'orderByCount'+grp),45000)]);
+    const cnt=new Map(); c.table.rows.forEach(r=>cnt.set(r[0]+'|'+r[1]+'|'+r[2],r[4]));
+    m.table.rows.forEach(r=>{ if(r[4]==null) return; const n=cnt.get(r[0]+'|'+r[1]+'|'+r[2])||1, key=r[0].slice(0,7)+'|'+Math.round(r[1])+'|'+Math.round(r[2]);
+      const a=acc.get(key)||[0,0,0]; a[0]+=r[4]*n; a[1]+=(r[3]||0)*n; a[2]+=n; acc.set(key,a); });
+  }));
+  if(res.every(r=>r.status==='rejected')) throw new Error('live failed');
+  const out=[]; acc.forEach((a,key)=>{const [ym,i,j]=key.split('|'); out.push([+ym.slice(0,4),+ym.slice(5,7),+((+i+0.5)*DLAT).toFixed(4),+((+j+0.5)*DLON).toFixed(4),+(a[0]/a[2]).toFixed(2),Math.round(a[1]/a[2]),a[2]])});
+  return out;
 }
-async function loadSnapshot(){
-  const r=await fetch('snapshot.json'); if(!r.ok) throw new Error('no snapshot'); const j=await r.json(); j.live=false; return j;
+async function liveMid(t0){
+  const acc=new Map(), grp=`("time/1month,latitude/${DLAT.toFixed(6)},longitude/${DLON},depth/${DZ}")`, cons=[`time>=${t0}`,'segment_type<=2'];
+  const res=await Promise.allSettled(SOURCES.map(async base=>{
+    const m=await jsonp(erddapUrl(base,'time,latitude,longitude,depth,temperature',cons,'orderByMean'+grp),60000);
+    m.table.rows.forEach(r=>{ if(r[4]==null) return; const key=r[0].slice(0,7)+'|'+Math.round(r[1])+'|'+Math.round(r[2]), L=Math.round(r[3]);
+      const lay=acc.get(key)||new Map(); const a=lay.get(L)||[0,0]; a[0]+=r[4]; a[1]++; lay.set(L,a); acc.set(key,lay); });
+  }));
+  if(res.every(r=>r.status==='rejected')) throw new Error('live failed');
+  const out=[]; acc.forEach((lay,key)=>{const [ym,i,j]=key.split('|'); const top=Math.max(...lay.keys()); const temps=[];
+    for(let L=0;L<=top;L++){const a=lay.get(L); temps.push(a?+(a[0]/a[1]).toFixed(2):null);}
+    if(temps.filter(t=>t!=null).length>=2) out.push([+ym.slice(0,4),+ym.slice(5,7),+((+i+0.5)*DLAT).toFixed(4),+((+j+0.5)*DLON).toFixed(4),temps]);});
+  return out;
 }
-function ingest(d){
-  OBS=d.obs; CELLS=new Map(); BYMONTH=new Map();
-  OBS.forEach(o=>{const key=o[2]+','+o[3]; if(!CELLS.has(key)) CELLS.set(key,{k:key,la:o[2],lo:o[3],z:o[5]});
-    const mk=o[0]+'-'+o[1]; if(!BYMONTH.has(mk)) BYMONTH.set(mk,[]); BYMONTH.get(mk).push(o)});
-  YEARS=[...new Set(OBS.map(o=>o[0]))].sort();
-  const last=OBS.reduce((a,o)=>(o[0]*12+o[1]>a[0]*12+a[1]?o:a),OBS[0]); yr=last[0]; mo=last[1];
-  yb.innerHTML=''; YEARS.forEach(y=>{const b=document.createElement('button');b.type='button';b.textContent=y;b.dataset.y=y;
-    b.onclick=()=>{yr=y;sel=null;if(!BYMONTH.has(yr+'-'+mo)){const ms=[...BYMONTH.keys()].filter(k=>k.startsWith(y+'-')).map(k=>+k.split('-')[1]);mo=ms.length?Math.max(...ms):mo}draw()};yb.appendChild(b)});
-  const when=new Date(d.fetched), st=$('status');
-  st.className='status '+(d.live?'live':'stale');
-  $('statusTxt').textContent=d.live?`Live from NOAA ERDDAP · loaded ${when.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`:`Saved snapshot from ${when.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})}`;
-  drawGrid(); draw();
+async function loadKind(kind,file,key,live){
+  let snap=null;
+  try{ const r=await fetch(file); snap=await r.json(); }catch(e){ snap=null; }
+  if(snap){ ingest(kind,snap[key]); setStatus(kind,'busy','Updating'); }
+  const t0=cutoffOf(DS[kind].months)||`${new Date().getUTCFullYear()-1}-01-01`;
+  try{
+    const fresh=await live(t0);
+    const cut=t0.slice(0,7).split('-').map(Number), cutN=cut[0]*12+cut[1];
+    ingest(kind,(snap?snap[key]:[]).filter(o=>o[0]*12+o[1]<cutN).concat(fresh));
+    setStatus(kind,'live','Live · '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}));
+  }catch(e){
+    setStatus(kind,'stale',snap?'Saved '+new Date(snap.fetched).toLocaleDateString([], {month:'short',day:'numeric'}):'No data, reload');
+  }
 }
+function ensureMid(){ if(!DS.mid.loading){ DS.mid.status=['busy','Loading']; DS.mid.loading=loadKind('mid','profiles.json','profiles',liveMid); } return DS.mid.loading; }
+
 const st=document.createElement('style');
 st.textContent=`#map text.v{font-family:var(--mono);paint-order:stroke;stroke:rgba(0,0,0,.18)}
 #map text.d{font-family:var(--mono)}
@@ -254,14 +552,28 @@ st.textContent=`#map text.v{font-family:var(--mono);paint-order:stroke;stroke:rg
 #map text.place.sea{font-style:italic;font-weight:500;fill:#dce9f2;stroke:rgba(10,33,62,.6)}
 #map text.sb{font-family:var(--mono);font-size:12px;fill:#14211f}`;
 document.head.appendChild(st);
-let rz; window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>layout(false),150)});
+let rz; window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>{layout();if(screen==='view')drawTimeline()},150)});
+$('who').addEventListener('input',e=>{who=e.target.value.trim()});
+
+function drawQR(){
+  const here=(location.protocol.startsWith('http')&&!/claude\.ai|claudeusercontent|localhost|127\.0\.0\.1/.test(location.host))?location.origin+location.pathname:APP_URL_DEFAULT;
+  $('qrUrl').textContent=here.replace(/^https?:\/\//,'');
+  try{ const q=qrcode(0,'M'); q.addData(here); q.make(); $('qr').innerHTML=q.createSvgTag({cellSize:3,margin:0,scalable:true}); }
+  catch(e){ $('qr').parentElement.hidden=true; }
+}
+
 (async()=>{
+  speciesUI(); recentUI(); setTool('pan'); drawQR(); updateStatus();
   try{ const r=await fetch('bathy.json'); B=await r.json(); }catch(e){ B=null; }
-  layout(true);
-  let d=null;
-  try{ d=await loadLive(); }catch(e){ try{ d=await loadSnapshot(); }catch(e2){ d=null; } }
-  if(d) ingest(d);
-  else { $('status').className='status stale'; $('statusTxt').textContent='Data unavailable'; $('read').textContent='Bottom temperatures could not be loaded from NOAA ERDDAP, and no saved snapshot was found. Check the connection and reload.'; }
+  layout(); goTo(fitCover(),0);
+  const shared=readHash();
+  if(shared) applySetup(shared); else setAOI(PRESETS[0].poly,PRESETS[0].name);
+  const bottom=loadKind('bottom','snapshot.json','obs',liveBottom);
+  if(shared){
+    const poll=setInterval(()=>{ if(cur().ready){ clearInterval(poll); if(screen!=='view') openView(); } },150);
+    setTimeout(()=>clearInterval(poll),120000);
+  }
+  await bottom;
 })();
 </script>
 
