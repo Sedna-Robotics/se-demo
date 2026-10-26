@@ -3,12 +3,13 @@
 ERDDAP averages each source server side (orderByMean / orderByCount) into fine 1 nm bins and calendar months
 (profiles also into 5 m layers). This script then snaps every fine bin onto the FIShBOT 7 km grid, using the cell
 definitions in fishbot_grid.json (FIShBOT's botgrid: UTM zone 19N, 7000 m cells), and combines the sources.
-It also writes grid.json with the corners of every cell that has data. Run once a day (see
+It also writes grid.json with the corners of every cell that has data, and doppio/ with the DOPPIO ocean model
+on the same grid (an optional layer in the app). Run once a day (see
 .github/workflows/refresh.yml).
 
 Usage:  python3 refresh_data.py            standard library only
 """
-import csv, io, json, math, datetime, pathlib, urllib.parse, urllib.request, urllib.error, concurrent.futures as cf
+import array, sys, csv, hashlib, io, json, math, ssl, datetime, pathlib, urllib.parse, urllib.request, urllib.error, concurrent.futures as cf
 
 EMOLT = "https://erddap.emolt.net/erddap/tabledap/"
 ONDECK = "https://erddap.ondeckdata.com/erddap/tabledap/"
@@ -262,6 +263,155 @@ def build_profiles(ex):
     return out
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# DOPPIO ocean model (Rutgers ROMS, 7 km, data assimilative, daily averages). Optional layer in the app.
+# tds.marine.rutgers.edu chains to "emSign Root CA - G1", which the standard Python/Ubuntu trust stores do not
+# carry. The root is kept in certs/, its fingerprint is checked here, and it is trusted for this one host only.
+DOPPIO = "https://tds.marine.rutgers.edu/thredds/dodsC/roms/doppio/2017_da/avg/Averages_Best_Excluding_Day1"
+DOPPIO_ROOT = "40F6AF0346A99AA1CD1D555A4E9CCE62C7F9634603EE406615833DC8C8D00367"
+DOPPIO_BOTTOM_STEP, DOPPIO_PROFILE_STEP, DOPPIO_MAX_Z = 7, 10, 150   # days between samples; deepest layer (m)
+
+
+def doppio_ctx():
+    pem = (pathlib.Path(__file__).parent / "certs" / "emsign-root-ca-g1.pem").read_text()
+    der = ssl.PEM_cert_to_DER_cert(pem[pem.index("-----BEGIN"):])
+    if hashlib.sha256(der).hexdigest().upper() != DOPPIO_ROOT:
+        raise RuntimeError("emSign root certificate does not match its pinned fingerprint")
+    ctx = ssl.create_default_context()
+    ctx.load_verify_locations(cadata=der)
+    return ctx
+
+
+def dods(ctx, var, idx):
+    """First array of a DAP2 binary (.dods) response, as a flat list of floats."""
+    url = DOPPIO + ".dods?" + var + "".join(f"[{a}:{s}:{b}]" for a, s, b in idx)
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "species-temperature-band-map/1.0"})
+            with urllib.request.urlopen(req, timeout=600, context=ctx) as r: raw = r.read()
+            i = raw.index(b"\nData:\n") + 7
+            n = int.from_bytes(raw[i:i + 4], "big")
+            a = array.array("d"); a.frombytes(raw[i + 8:i + 8 + 8 * n])
+            if sys.byteorder == "little": a.byteswap()   # XDR is big-endian
+            return a.tolist()
+        except Exception as e:
+            if attempt == 2: print(f"  ! doppio {var} {e}"); return None
+
+
+def build_doppio(ex):
+    """Monthly DOPPIO bottom temperature (3 years) and 5 m profiles (12 months) per FIShBOT cell."""
+    try: ctx = doppio_ctx()
+    except Exception as e: print(f"  ! doppio {e}"); return None
+    NE, NX = 106, 242
+    full = [(0, 1, NE - 1), (0, 1, NX - 1)]
+    lat, lon, h, mask = (dods(ctx, v, full) for v in ("lat_rho", "lon_rho", "h", "mask_rho"))
+    if None in (lat, lon, h, mask): return None
+    pts = [k for k in range(NE * NX) if mask[k] > 0.5 and AREA["latMin"] <= lat[k] <= AREA["latMax"] and AREA["lonMin"] <= lon[k] <= AREA["lonMax"]]
+    e0, e1 = min(k // NX for k in pts), max(k // NX for k in pts)
+    x0, x1 = min(k % NX for k in pts), max(k % NX for k in pts)
+    W = x1 - x0 + 1
+    bycell = {}
+    for k in pts:
+        c = cell_of_ll(lat[k], lon[k])
+        if c is not None: bycell.setdefault(c[0], []).append(((k // NX - e0) * W + (k % NX - x0), h[k]))
+    # The model and FIShBOT grids are both about 7 km but offset, so some squares hold no model point.
+    # Give those the nearest model water point within 7 km of the square's centre.
+    near = {}
+    for k in pts: near.setdefault((round(lat[k] * 10), round(lon[k] * 10)), []).append(k)
+    for c in GRID["cells"]:
+        if c[0] in bycell or not (AREA["latMin"] <= c[3] <= AREA["latMax"] and AREA["lonMin"] <= c[4] <= AREA["lonMax"]): continue
+        best, bd = None, 7.0
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for k in near.get((round(c[3] * 10) + di, round(c[4] * 10) + dj), ()):
+                    d = math.hypot((lat[k] - c[3]) * 111.2, (lon[k] - c[4]) * 111.2 * math.cos(math.radians(c[3])))
+                    if d < bd: best, bd = k, d
+        if best is not None: bycell[c[0]] = [((best // NX - e0) * W + (best % NX - x0), h[best])]
+    cells = sorted(bycell)
+    # model time axis: hours since 2017-11-01, one value per day
+    try:
+        with urllib.request.urlopen(DOPPIO + ".dds", timeout=120, context=ctx) as r:
+            nt = int(r.read().decode().split("time1[time1 = ")[1].split("]")[0])
+    except Exception as e:
+        print(f"  ! doppio dds {e}"); return None
+    tt = dods(ctx, "time1", [(0, 1, nt - 1)]) or []
+    base = datetime.datetime(2017, 11, 1, tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    days = [(i, base + datetime.timedelta(hours=v)) for i, v in enumerate(tt) if v == v and base + datetime.timedelta(hours=v) <= now]
+    cs, sr = dods(ctx, "Cs_r", [(0, 1, 39)]), dods(ctx, "s_rho", [(0, 1, 39)]); hc = 250.0
+    # depth of each model level (m, negative down) per point, ROMS Vtransform 2 with the free surface taken as 0
+    zlev = {k: [hk * (hc * sr[n] + hk * cs[n]) / (hc + hk) for n in range(40)] for c in bycell for k, hk in bycell[c]}
+    ym = lambda d: f"{d.year}-{d.month:02d}"
+    y0, m0 = datetime.date.today().year - BOTTOM_YEARS + 1, 1
+    bdays = [(i, d) for i, d in days if (d.year, d.month) >= (y0, m0)][::-1][::DOPPIO_BOTTOM_STEP]
+    py, pm = months_back(PROFILE_MONTHS)
+    pdays = [(i, d) for i, d in days if (d.year, d.month) >= (py, pm)][::-1][::DOPPIO_PROFILE_STEP]
+    sub = [(e0, 1, e1), (x0, 1, x1)]
+
+    def bot(job):
+        i, d = job
+        return ym(d), dods(ctx, "temp", [(i, 1, i), (0, 1, 0), *sub])
+
+    def prof(job):
+        i, d = job
+        return ym(d), dods(ctx, "temp", [(i, 1, i), (0, 1, 39), *sub])
+
+    bacc = {}
+    for m, a in ex.map(bot, bdays):
+        if a is None: continue
+        s = bacc.setdefault(m, [[0.0, 0] for _ in cells])
+        for ci, c in enumerate(cells):
+            for k, _ in bycell[c]:
+                v = a[k]
+                if -3 < v < 35: s[ci][0] += v; s[ci][1] += 1
+    nl = DOPPIO_MAX_Z // DZ
+    NP = (e1 - e0 + 1) * W
+    pacc = {}
+    for m, a in ex.map(prof, pdays):
+        if a is None: continue
+        s = pacc.setdefault(m, [[[0.0, 0] for _ in range(nl)] for _ in cells])
+        for ci, c in enumerate(cells):
+            for k, hk in bycell[c]:
+                z = zlev[k]
+                col = [a[n * NP + k] for n in range(40)]
+                for L in range(min(nl, int(hk // DZ) + 1)):
+                    zc = -(L * DZ + DZ / 2)
+                    if zc < z[0]: break
+                    if zc >= z[-1]: v = col[-1]
+                    else:
+                        n = next(n for n in range(39) if z[n] <= zc < z[n + 1])
+                        f = (zc - z[n]) / (z[n + 1] - z[n]); v = col[n] + f * (col[n + 1] - col[n])
+                    if -3 < v < 35: s[ci][L][0] += v; s[ci][L][1] += 1
+    r1 = lambda x: round(x, 1)
+    out = {"cells": [[c, r1(sum(hk for _, hk in bycell[c]) / len(bycell[c]))] for c in cells],
+           "bottom": {m: [r1(a / n) if n else None for a, n in s] for m, s in sorted(bacc.items())},
+           "profiles": {}}
+    for m, s in sorted(pacc.items()):
+        rows = []
+        for layers in s:
+            v = [r1(a / n) if n else None for a, n in layers]
+            while v and v[-1] is None: v.pop()
+            rows.append(v)
+        out["profiles"][m] = rows
+    out["through"] = days[-1][1].date().isoformat() if days else None
+    print(f"doppio: {len(cells)} cells, {len(out['bottom'])} bottom months, {len(out['profiles'])} profile months, through {out['through']}")
+    return out
+
+
+def write_doppio(here, now, dop):
+    """Optional DOPPIO layer: one index file plus one profile file per month, loaded on demand."""
+    dd = here / "doppio"; dd.mkdir(exist_ok=True)
+    r4 = lambda v: round(v, 4)
+    cells = [[BYID[c][3], BYID[c][4], c, z, [[r4(x), r4(y)] for x, y in BYID[c][5]]] for c, z in dop["cells"]]
+    months = sorted(dop["profiles"])
+    (dd / "doppio.json").write_text(json.dumps({"fetched": now, "through": dop["through"], "source": DOPPIO, "cells": cells,
+                                                 "bottom": dop["bottom"], "profiles": months}, separators=(",", ":")))
+    for m in months:
+        (dd / f"prof-{m}.json").write_text(json.dumps({"month": m, "dz": DZ, "rows": dop["profiles"][m]}, separators=(",", ":")))
+    for f in dd.glob("prof-*.json"):
+        if f.stem[5:] not in months: f.unlink()
+
+
 def main():
     here = pathlib.Path(__file__).parent
     now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes")
@@ -269,11 +419,13 @@ def main():
     with cf.ThreadPoolExecutor(max_workers=4) as ex:
         obs = build_bottom(ex)
         prof = build_profiles(ex)
+        dop = build_doppio(ex)
     (here / "snapshot.json").write_text(json.dumps({**meta, "obs": obs}, separators=(",", ":")))
     (here / "profiles.json").write_text(json.dumps({**meta, "dz": DZ, "profiles": prof}, separators=(",", ":")))
     used = {(r[2], r[3]) for r in obs} | {(r[2], r[3]) for r in prof}
     cells = [[c[3], c[4], c[0], c[5]] for c in GRID["cells"] if (c[3], c[4]) in used]
     (here / "grid.json").write_text(json.dumps({"fetched": now, "cells": cells}, separators=(",", ":")))
+    if dop: write_doppio(here, now, dop)
     for name, rows, k in (("bottom", obs, 7), ("profile", prof, 5)):
         tally = {sid: sum(1 for r in rows if r[k] & BIT[sid]) for sid in SOURCE_IDS}
         print(f"{name}: {len(rows)} square-months; by source {({k2: v for k2, v in tally.items() if v})}")

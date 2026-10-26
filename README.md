@@ -73,16 +73,35 @@ Left out on purpose:
 - **OOI Pioneer array**: mostly south of the area's 40.3 N edge.
 - **Oleander XBT line**: crosses the shelf south of the area.
 - **NEFSC Study Fleet**: not published on a public server.
-- **DOPPIO model**: the near-real-time forecast server at Rutgers has a TLS
-  certificate chain the standard trust stores cannot verify, and the public AWS
-  copy is a 2007 to 2024 reanalysis only.
 
 Each square records which sources fed it; tapping a square lists them.
+
+### DOPPIO model layer (optional)
+
+The Model button on the results map fills squares with no observations that
+month from DOPPIO, Rutgers' 7 km data-assimilating ROMS model
+(`roms/doppio/2017_da/avg/Averages_Best_Excluding_Day1` on
+tds.marine.rutgers.edu). `refresh_data.py` samples the daily averages weekly
+for bottom temperature (last 3 years) and every 10 days for profiles (last 12
+months, 5 m layers to 150 m), places each model point in its FIShBOT cell
+(squares without one take the nearest model point within 7 km), and writes
+`doppio/doppio.json` plus one `doppio/prof-YYYY-MM.json` per month. The app
+loads them only when Model is on. Model squares are hatched and never replace
+observations. Model bottom temperature differs from the observed squares by
+about 0.9 °C on average, with a bias of about -0.15 °C.
+
+**Certificate.** The Rutgers server's certificate chains to "emSign Root CA -
+G1", which is in Chrome's and Microsoft's root stores but not in the Python or
+Ubuntu bundles. `certs/emsign-root-ca-g1.pem` holds that root. The script
+checks its SHA-256 fingerprint
+(`40F6AF03...C8D00367`, matching emSign's repository and Chrome's root store)
+and trusts it for the DOPPIO requests only. Every other request uses the
+standard trust store, and TLS verification is never turned off.
 
 ### Daily refresh
 
 `.github/workflows/refresh.yml` runs `refresh_data.py` every day at 09:17 UTC
-and commits `snapshot.json`, `profiles.json` and `grid.json` when they change, which
+and commits `snapshot.json`, `profiles.json`, `grid.json` and `doppio/` when they change, which
 redeploys GitHub Pages. Run it by hand from the Actions tab ("Refresh data",
 then "Run workflow"), or locally:
 
@@ -99,6 +118,8 @@ contours are GEBCO 2024.
 | `grid.json` | Corners of every FIShBOT cell that has data, for drawing. |
 | `fishbot_grid.json` | The full FIShBOT grid (cell id, row, column, centroid, corners). |
 | `snapshot.json` | Bottom temperatures per FIShBOT cell, with a source mask per square. |
+| `doppio/` | DOPPIO model layer: cell index with monthly bottom temperatures, plus monthly profile files. |
+| `certs/emsign-root-ca-g1.pem` | Pinned root certificate for the Rutgers DOPPIO server. |
 | `profiles.json` | Water-column profiles per FIShBOT cell in 5 m layers, with a source mask. |
 | `bathy.json`, `bathy-ne.jpg`, `bathy-cape.jpg` | Seafloor relief, coastline and fathom contours. |
 | `refresh_data.py` | Rebuilds the data files from ERDDAP and the DMF ArcGIS layers. |
