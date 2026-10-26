@@ -472,7 +472,7 @@ function drawCells(){
 function cellReadout(){
   const s=ROWS.find(d=>d.k===sel);
   if(!s){ $('read').textContent=isMid()?'Tap a square for its in-band layer and water column. Zoom in to see net depths.':'Tap a square for its temperature, depth and readings. Zoom in to see the numbers.'; return; }
-  if(isMid()) $('read').innerHTML=s.inb?`In band from <b class="num">${FM(s.top)} to ${FM(s.bot)} fm</b>, set the net near <b class="num">${FM(s.center)} fm</b> (about ${F(s.t).toFixed(0)} °F). Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F · ${MO[mo-1]} ${yr}`
+  if(isMid()) $('read').innerHTML=s.inb?(FM(s.top)===FM(s.bot)?`Only a thin in-band layer near <b class="num">${FM(s.center)} fm</b>${FM(s.bot)>=FM(s.z)?' (at the bottom)':''}`:`In band from <b class="num">${FM(s.top)} to ${FM(s.bot)} fm</b>, set the net near <b class="num">${FM(s.center)} fm</b>`)+` (about ${F(s.t).toFixed(0)} °F). Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F · ${MO[mo-1]} ${yr}`
       :`No in-band layer in ${MO[mo-1]} ${yr}. Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F.`;
   else $('read').innerHTML=`<b class="num">${F(s.t).toFixed(1)} °F</b> at about <span class="num">${FM(s.z)}</span> fm · <span class="num">${s.n.toLocaleString()}</span> readings in ${MO[mo-1]} ${yr}`;
 }
