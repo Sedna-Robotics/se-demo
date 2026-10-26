@@ -12,6 +12,9 @@ import csv, io, json, math, datetime, pathlib, urllib.parse, urllib.request, url
 
 EMOLT = "https://erddap.emolt.net/erddap/tabledap/"
 ONDECK = "https://erddap.ondeckdata.com/erddap/tabledap/"
+COMET = "https://comet.nefsc.noaa.gov/erddap/tabledap/"
+GLIDERS = "https://gliders.ioos.us/erddap/"
+DMF = "https://services1.arcgis.com/7iJyYTjCtKsZS1LR/arcgis/rest/services/"
 AREA = dict(latMin=40.3, latMax=45.2, lonMin=-74.0, lonMax=-65.5)
 DLAT, DLON, DZ = 1 / 60, 0.0225, 5   # fine bins from ERDDAP before snapping to the FIShBOT grid
 BOTTOM_YEARS, PROFILE_MONTHS = 3, 12
@@ -24,15 +27,26 @@ BOTTOM = [
     ("gliders", "Demersal gliders", ONDECK + "demersal_gliders_aggregated", [], ["depth"]),
     ("sfw_receivers", "South Fork Wind receivers", ONDECK + "wind_farm_acoustic_receivers", [], ["depth"]),
 ]
+# id, label, url, extra constraints, depth variable, time variable, temperature variable
 PROFILES = [
-    ("emolt", "eMOLT", EMOLT + "eMOLT_RT", ["segment_type<=2"], "depth"),
-    ("mcfa", "MCFA", EMOLT + "MCFA_RT", ["segment_type<=2"], "depth"),
-    ("cfrf_mobile", "CFRF trap casts", ONDECK + "mobile_gear_oceanography", [], "pressure"),
-    ("shelf_fleet", "CFRF/WHOI Shelf Research Fleet CTD", ONDECK + "shelf_fleet_profiles_1m_binned", [], "sea_pressure"),
-    ("sfw_ctd", "South Fork Wind survey CTD", ONDECK + "wind_farm_profiles_1m_binned", [], "sea_pressure"),
+    ("emolt", "eMOLT", EMOLT + "eMOLT_RT", ["segment_type<=2"], "depth", "time", "temperature"),
+    ("mcfa", "MCFA", EMOLT + "MCFA_RT", ["segment_type<=2"], "depth", "time", "temperature"),
+    ("cfrf_mobile", "CFRF trap casts", ONDECK + "mobile_gear_oceanography", [], "pressure", "time", "temperature"),
+    ("shelf_fleet", "CFRF/WHOI Shelf Research Fleet CTD", ONDECK + "shelf_fleet_profiles_1m_binned", [], "sea_pressure", "time", "temperature"),
+    ("sfw_ctd", "South Fork Wind survey CTD", ONDECK + "wind_farm_profiles_1m_binned", [], "sea_pressure", "time", "temperature"),
+    ("ecomon", "NOAA NEFSC ECOMON and survey CTD", COMET + "ocdbs_v_erddap1", ['GEAR_TYPE!="Bottle"'], "depth", "UTC_DATETIME", "sea_water_temperature"),
 ]
-SOURCE_IDS = ["emolt", "mcfa", "cfrf_fixed", "gliders", "sfw_receivers", "cfrf_mobile", "shelf_fleet", "sfw_ctd"]
+# Mass. DMF ArcGIS layers (bottom): Cape Cod Bay Study Fleet DO loggers in lobster traps, and DMF fixed bottom stations
+DMF_DO_LAYERS = ["DMF_Avg_DO_PublicView", "DMF_Avg_DO_2024_Archive", "DMF_Avg_DO_2023_Archive"]
+DMF_STATIONS = {  # table column -> location name in layer 3 (station depths are in feet)
+    "Cleveland_25": "Cleveland", "Bbay_Barge_Tower_70": "BBay Barge", "Rocky_45": "Rocky Point", "Manomet_55": "Manomet",
+    "Mars_110": "Mars", "Martins_Romance_70": "Martins Ledge", "Sippewissett_18": "Sippewisset", "Scortons_30": "Scorton",
+    "Cuttyhunk_18": "Cuttyhunk"}
+SOURCE_IDS = ["emolt", "mcfa", "cfrf_fixed", "gliders", "sfw_receivers", "cfrf_mobile", "shelf_fleet", "sfw_ctd",
+              "ecomon", "ioos_gliders", "dmf_do", "dmf_stations"]
 LABELS = {s[0]: s[1] for s in BOTTOM + PROFILES}
+LABELS.update({"ioos_gliders": "IOOS Glider DAC profiles", "dmf_do": "Mass. DMF Cape Cod Bay DO study fleet",
+               "dmf_stations": "Mass. DMF bottom temperature stations"})
 BIT = {sid: 1 << i for i, sid in enumerate(SOURCE_IDS)}
 
 
@@ -102,9 +116,9 @@ def bottom_job(src, t0, t1):
 
 
 def profile_job(src, t0, t1):
-    sid, _, base, extra, zvar = src
-    grp = f'("time/1month,latitude/{DLAT:.6f},longitude/{DLON},{zvar}/{DZ}")'
-    h, rows = query(base, f"time,latitude,longitude,{zvar},temperature", [f"time>={t0}", f"time<={t1}", *extra], "orderByMean" + grp)
+    sid, _, base, extra, zvar, tvar, tempvar = src
+    grp = f'("{tvar}/1month,latitude/{DLAT:.6f},longitude/{DLON},{zvar}/{DZ}")'
+    h, rows = query(base, f"{tvar},latitude,longitude,{zvar},{tempvar}", [f"{tvar}>={t0}", f"{tvar}<={t1}", f"{tempvar}>-3", f"{tempvar}<35", *extra], "orderByMean" + grp)
     out = []
     for r in rows:
         t, L = num(r[4]), num(r[3])
@@ -131,22 +145,92 @@ CELL = {(c[1], c[2]): c for c in GRID["cells"]}   # (row, col) -> [id, row, col,
 BYID = {c[0]: c for c in GRID["cells"]}
 
 
-def cell_of(i, j):
-    """FIShBOT cell containing the centre of fine bin (i, j), or None if outside the grid."""
-    E, N = utm19((i + 0.5) * DLAT, (j + 0.5) * DLON)
+def cell_of_ll(lat, lon):
+    """FIShBOT cell containing a point, or None if outside the grid."""
+    E, N = utm19(lat, lon)
     return CELL.get((int((GRID["N0"] - N) // GRID["size"]), int((E - GRID["E0"]) // GRID["size"])))
+
+
+def cell_of(i, j):
+    """FIShBOT cell containing the centre of fine bin (i, j)."""
+    return cell_of_ll((i + 0.5) * DLAT, (j + 0.5) * DLON)
+
+
+def get_json(url):
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "species-temperature-band-map/1.0"})
+            with urllib.request.urlopen(req, timeout=300) as r: return json.load(r)
+        except Exception as e:
+            if attempt == 2: print(f"  ! {url[:90]} {e}"); return {}
+
+
+def arcgis_rows(layer_url, where, fields, geometry):
+    """Page through an ArcGIS feature layer or table query."""
+    out, offset = [], 0
+    while True:
+        q = {"where": where, "outFields": fields, "returnGeometry": "true" if geometry else "false", "outSR": "4326",
+             "resultOffset": offset, "resultRecordCount": 2000, "orderByFields": "OBJECTID", "f": "json"}
+        d = get_json(layer_url + "/query?" + urllib.parse.urlencode(q))
+        feats = d.get("features", [])
+        out += feats
+        if not feats or not d.get("exceededTransferLimit"): return out
+        offset += len(feats)
+
+
+def dmf_bottom():
+    """Mass. DMF bottom temperatures as (ym, lat, lon, temp, depth_m, n, sid) points."""
+    start = f"{datetime.date.today().year - BOTTOM_YEARS + 1}-01-01"
+    pts = []
+    for layer in DMF_DO_LAYERS:
+        for f in arcgis_rows(DMF + layer + "/FeatureServer/0", f"DateTime >= TIMESTAMP '{start} 00:00:00'", "DateTime,Avg_Temp_C,Avg_Ct", True):
+            a, g = f["attributes"], f.get("geometry") or {}
+            if a.get("Avg_Temp_C") is None or a.get("DateTime") is None or "x" not in g: continue
+            d = datetime.datetime.fromtimestamp(a["DateTime"] / 1000, datetime.timezone.utc)
+            pts.append((f"{d.year}-{d.month:02d}", g["y"], g["x"], float(a["Avg_Temp_C"]), None, int(a.get("Avg_Ct") or 1), "dmf_do"))
+    st = DMF + "MA_Ocean_Bottom_Temperature_Sensor_Data/FeatureServer"
+    loc = {f["attributes"]["Location"]: f["attributes"] for f in arcgis_rows(st + "/3", "1=1", "*", False)}
+    for f in arcgis_rows(st + "/0", f"DATE >= TIMESTAMP '{start} 00:00:00'", "*", False):
+        a = f["attributes"]
+        if a.get("DATE") is None: continue
+        d = datetime.datetime.fromtimestamp(a["DATE"] / 1000, datetime.timezone.utc)
+        for col, name in DMF_STATIONS.items():
+            v, s = a.get(col), loc.get(name)
+            if v is None or s is None: continue
+            pts.append((f"{d.year}-{d.month:02d}", s["Lat"], s["Long"], float(v), s["Depth"] * 0.3048, 1, "dmf_stations"))
+    return pts
+
+
+def glider_sources():
+    """IOOS Glider DAC deployments in the area over the profile window (delayed-mode copy preferred)."""
+    y, m = months_back(PROFILE_MONTHS)
+    q = {"page": 1, "itemsPerPage": 1000, "searchFor": "", "protocol": "tabledap", "minLat": AREA["latMin"], "maxLat": AREA["latMax"],
+         "minLon": AREA["lonMin"], "maxLon": AREA["lonMax"], "minTime": f"{y}-{m:02d}-01T00:00:00Z"}
+    try:
+        req = urllib.request.Request(GLIDERS + "search/advanced.csv?" + urllib.parse.urlencode(q), headers={"User-Agent": "species-temperature-band-map/1.0"})
+        with urllib.request.urlopen(req, timeout=300) as r: rows = list(csv.reader(io.TextIOWrapper(r, encoding="utf-8")))
+    except Exception as e:
+        print(f"  ! glider search {e}"); return []
+    ids = [x[rows[0].index("Dataset ID")] for x in rows[1:]]
+    low = {i.lower() for i in ids}
+    keep = [i for i in ids if i.endswith("-delayed") or (i.lower() + "-delayed") not in low]
+    return [("ioos_gliders", LABELS["ioos_gliders"], GLIDERS + "tabledap/" + i, [], "depth", "time", "temperature") for i in keep]
 
 
 def build_bottom(ex):
     jobs = [(s, *w) for s in BOTTOM for w in windows((datetime.date.today().year - BOTTOM_YEARS + 1, 1), 6)]
     acc = {}
+    def add(sid, ym, c, t, z, n):
+        a = acc.setdefault((ym, c[0]), [0.0, 0.0, 0, 0, 0])
+        a[0] += t * n; a[2] += n; a[4] |= BIT[sid]
+        if z is not None: a[1] += z * n; a[3] += n
     for sid, rows in ex.map(lambda j: bottom_job(*j), jobs):
         for ym, i, j, t, z, n in rows:
             c = cell_of(i, j)
-            if c is None: continue
-            a = acc.setdefault((ym, c[0]), [0.0, 0.0, 0, 0, 0])
-            a[0] += t * n; a[2] += n; a[4] |= BIT[sid]
-            if z is not None: a[1] += z * n; a[3] += n
+            if c is not None: add(sid, ym, c, t, z, n)
+    for ym, lat, lon, t, z, n, sid in dmf_bottom():
+        c = cell_of_ll(lat, lon)
+        if c is not None and -3 < t < 35: add(sid, ym, c, t, z, n)
     obs = []
     for (ym, cid), (st, sz, n, nz, mask) in sorted(acc.items()):
         la, lo = BYID[cid][3], BYID[cid][4]
@@ -155,7 +239,11 @@ def build_bottom(ex):
 
 
 def build_profiles(ex):
-    jobs = [(s, *w) for s in PROFILES for w in windows(months_back(PROFILE_MONTHS), 3)]
+    y, m = months_back(PROFILE_MONTHS)
+    jobs = [(s, *w) for s in PROFILES for w in windows((y, m), 3)]
+    gl = glider_sources()
+    print(f"  {len(gl)} glider deployments")
+    jobs += [(s, f"{y}-{m:02d}-01", datetime.date.today().isoformat() + "T23:59:59Z") for s in gl]
     acc = {}
     for sid, rows in ex.map(lambda j: profile_job(*j), jobs):
         for ym, i, j, L, t in rows:

@@ -1,4 +1,3 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
 <title>Species Temperature Band Map</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
@@ -117,14 +116,17 @@ details[open] summary{color:var(--fg)}
     <div class="links">
       <details><summary>Species bands and sources</summary><div class="panel" id="aboutBands"></div></details>
       <details><summary>About the data</summary><div class="panel">
-        <p><b>Where it comes from.</b> Temperature sensors on commercial fishing gear and fishing-vessel research fleets, served by two ERDDAP servers:</p>
+        <p><b>Where it comes from.</b> Temperature sensors on commercial fishing gear, fishing-vessel research fleets, state monitoring and NOAA/IOOS surveys:</p>
         <ul>
           <li><a href="https://erddap.emolt.net/erddap/tabledap/eMOLT_RT.html" target="_blank" rel="noopener">eMOLT</a> and <a href="https://erddap.emolt.net/erddap/tabledap/MCFA_RT.html" target="_blank" rel="noopener">Maine Coast Fishermen's Association</a>: bottom readings while gear is fishing, and profiles while it is set and hauled.</li>
           <li><a href="https://erddap.ondeckdata.com/erddap/tabledap/index.html" target="_blank" rel="noopener">Commercial Fisheries Research Foundation (OnDeck ERDDAP)</a>: fixed-gear bottom sensors, trap-haul casts, Shelf Research Fleet CTD casts (with WHOI), South Fork Wind survey CTD casts and receiver thermistors, and demersal glider bottom data.</li>
+          <li><a href="https://www.mass.gov/info-details/tracking-dissolved-oxygen-with-the-cape-cod-bay-study-fleet-and-dmf" target="_blank" rel="noopener">Mass. DMF Cape Cod Bay dissolved oxygen monitoring</a>: bottom temperature from loggers on study-fleet lobster traps, plus DMF's long-running fixed bottom temperature stations.</li>
+          <li><a href="https://comet.nefsc.noaa.gov/erddap/tabledap/ocdbs_v_erddap1.html" target="_blank" rel="noopener">NOAA NEFSC ECOMON and survey CTD casts</a>: full water-column profiles.</li>
+          <li><a href="https://gliders.ioos.us/erddap/index.html" target="_blank" rel="noopener">IOOS Glider DAC</a>: profiles from ocean gliders in the region (delayed-mode copies when available).</li>
         </ul>
         <p><b>FIShBOT grid.</b> Readings are averaged onto NOAA's FIShBOT grid, the same 7 km (3.8 nm) squares FIShBOT uses, by calendar month. Bottom squares use the last 3 years; profiles use the last 12 months in 5 m layers. Tapping a square lists which sources fed it.</p>
         <p><b>Target depth.</b> For midwater species the app interpolates each square's profile, finds where it is in the species' band, and reports the middle of the thickest in-band layer.</p>
-        <p><b>Updated daily.</b> The files behind the map are rebuilt from ERDDAP once a day. The dot at the top shows when.</p>
+        <p><b>Updated daily.</b> The files behind the map are rebuilt from these servers once a day. The dot at the top shows when.</p>
         <p><b>Depth contours</b> are GEBCO 2024 bathymetry, in fathoms.</p></div></details>
       <details><summary>How to use</summary><div class="panel"><ul>
         <li>Pick a species and a preset area, or tap Rectangle or Polygon and draw your own on the map.</li>
@@ -547,5 +549,3 @@ function drawQR(){
   await bottom;
 })();
 </script>
-
-</body></html>

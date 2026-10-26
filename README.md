@@ -27,11 +27,13 @@ surface and deepest temperatures. Bands and sources are in the
 
 ## Data
 
-All sources are temperature sensors on commercial fishing gear or fishing-vessel
-research fleets. `refresh_data.py` asks each ERDDAP server to average its data
+Sources are temperature sensors on commercial fishing gear, fishing-vessel
+research fleets, Massachusetts DMF monitoring, and NOAA/IOOS surveys.
+`refresh_data.py` asks each ERDDAP server to average its data
 into fine 1 nm bins by calendar month, then snaps every bin onto the FIShBOT
 grid (FIShBOT's own `botgrid`: 7000 m cells in UTM zone 19N, stored here as
-`fishbot_grid.json`) and combines the sources. Squares line up exactly with
+`fishbot_grid.json`) and combines the sources. The DMF ArcGIS layers are point data, so each reading is
+placed directly in the FIShBOT cell that contains it. Squares line up exactly with
 FIShBOT's, so values can be compared cell for cell. Bottom squares cover the
 last 3 years; water-column profiles cover the last 12 months in 5 m layers.
 
@@ -46,6 +48,10 @@ last 3 years; water-column profiles cover the last 12 months in 5 m layers.
 | South Fork Wind survey CTD, 1 m binned | erddap.ondeckdata.com | Profiles |
 | South Fork Wind acoustic receiver thermistors | erddap.ondeckdata.com | Bottom |
 | Demersal gliders, aggregated bottom data | erddap.ondeckdata.com | Bottom |
+| Mass. DMF Cape Cod Bay DO study fleet loggers (`DMF_Avg_DO_PublicView` and yearly archives) | services1.arcgis.com | Bottom |
+| Mass. DMF bottom temperature stations (`MA_Ocean_Bottom_Temperature_Sensor_Data`) | services1.arcgis.com | Bottom |
+| NOAA NEFSC ECOMON and survey CTD (`ocdbs_v_erddap1`, bottles excluded) | comet.nefsc.noaa.gov | Profiles |
+| IOOS Glider DAC deployments in the area, found at run time (delayed mode preferred) | gliders.ioos.us | Profiles |
 
 Left out on purpose:
 
@@ -58,17 +64,29 @@ Left out on purpose:
 - **`emolt_data`** on OnDeck: redirects to eMOLT's own server, already used.
 - **FIShBOT** (`fishbot_realtime`, `fishbot_archive`): a 7 km product built from
   these same sources, so it would double count.
+- **DMF DO 2025 archive**: the ArcGIS layer needs a sign-in token, so 2025
+  logger data is missing until DMF makes it public.
+- **DMF stations Endicott and Sculpin**: no location in DMF's station layer.
+- **`eMOLT_RT_LOWELL`**: marked "DO test, DATA NOT FOR USE".
+- **NERACOOS buoys**: surface and fixed-depth moorings, few bottom or profile
+  points per FIShBOT cell; could be added later as point sources.
+- **OOI Pioneer array**: mostly south of the area's 40.3 N edge.
+- **Oleander XBT line**: crosses the shelf south of the area.
+- **NEFSC Study Fleet**: not published on a public server.
+- **DOPPIO model**: the near-real-time forecast server at Rutgers has a TLS
+  certificate chain the standard trust stores cannot verify, and the public AWS
+  copy is a 2007 to 2024 reanalysis only.
 
 Each square records which sources fed it; tapping a square lists them.
 
 ### Daily refresh
 
 `.github/workflows/refresh.yml` runs `refresh_data.py` every day at 09:17 UTC
-and commits `snapshot.json` and `profiles.json` when they change, which
+and commits `snapshot.json`, `profiles.json` and `grid.json` when they change, which
 redeploys GitHub Pages. Run it by hand from the Actions tab ("Refresh data",
 then "Run workflow"), or locally:
 
-    python3 refresh_data.py      # about 3 to 4 minutes, standard library only
+    python3 refresh_data.py      # about 20 minutes, standard library only
 
 The dot at the top of the app shows when the files were last rebuilt. Depth
 contours are GEBCO 2024.
@@ -83,7 +101,7 @@ contours are GEBCO 2024.
 | `snapshot.json` | Bottom temperatures per FIShBOT cell, with a source mask per square. |
 | `profiles.json` | Water-column profiles per FIShBOT cell in 5 m layers, with a source mask. |
 | `bathy.json`, `bathy-ne.jpg`, `bathy-cape.jpg` | Seafloor relief, coastline and fathom contours. |
-| `refresh_data.py` | Rebuilds both data files from ERDDAP. |
+| `refresh_data.py` | Rebuilds the data files from ERDDAP and the DMF ArcGIS layers. |
 | `.github/workflows/refresh.yml` | Runs the rebuild daily. |
 | `.nojekyll` | Tells GitHub Pages to serve the files as they are. |
 
