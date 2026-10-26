@@ -1,7 +1,7 @@
 """Rebuild snapshot.json (bottom) and profiles.json (water column) from every useful fishing-industry source.
 
-All averaging happens server side in ERDDAP (orderByMean / orderByCount), binned to 1 nm squares
-(1 minute of latitude by 0.0225 deg of longitude, about 1 nm at 42 N) and calendar months; profiles are
+All averaging happens server side in ERDDAP (orderByMean / orderByCount), binned to FIShBOT-sized squares
+(0.063 deg of latitude by 0.0842 deg of longitude, about 7 km or 3.8 nm at 42 N) and calendar months; profiles are
 also binned into 5 m layers. Run once a day (see .github/workflows/refresh.yml).
 
 Usage:  python3 refresh_data.py            standard library only
@@ -11,7 +11,7 @@ import csv, io, json, math, datetime, pathlib, urllib.parse, urllib.request, url
 EMOLT = "https://erddap.emolt.net/erddap/tabledap/"
 ONDECK = "https://erddap.ondeckdata.com/erddap/tabledap/"
 AREA = dict(latMin=40.3, latMax=45.2, lonMin=-74.0, lonMax=-65.5)
-DLAT, DLON, DZ = 1 / 60, 0.0225, 5
+DLAT, DLON, DZ = 0.063, 0.0842, 5   # FIShBOT's ~7 km grid spacing
 BOTTOM_YEARS, PROFILE_MONTHS = 3, 12
 
 # id, label, url, extra constraints, depth variables in order of preference

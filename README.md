@@ -1,7 +1,7 @@
 # Species Temperature Band Map
 
 A phone-first web app for showing fishermen where the water is in their target
-species' preferred temperature band, on 1 nm squares across New England.
+species' preferred temperature band, on FIShBOT-sized (about 7 km) squares across New England.
 
 - **Setup screen:** who it is for, a species, and an area of interest (presets,
   or draw a rectangle or polygon). A QR code links phones to the app.
@@ -29,8 +29,8 @@ surface and deepest temperatures. Bands and sources are in the
 
 All sources are temperature sensors on commercial fishing gear or fishing-vessel
 research fleets. `refresh_data.py` asks each ERDDAP server to average its data
-into 1 nm squares (1 minute of latitude by 0.0225° of longitude, about 1 nm at
-42° N) and calendar months, then combines the sources. Bottom squares cover the
+into squares the size of NOAA's FIShBOT grid (0.063° of latitude by 0.0842° of
+longitude, about 7 km or 3.8 nm on a side at 42° N) and calendar months, then combines the sources. Bottom squares cover the
 last 3 years; water-column profiles cover the last 12 months in 5 m layers.
 
 | Source | Server | Used for |
@@ -76,8 +76,8 @@ contours are GEBCO 2024.
 | File | What it is |
 |---|---|
 | `index.html` | The whole app. Loads d3 7.8.5 and qrcode-generator 1.4.4 from cdnjs. |
-| `snapshot.json` | 1 nm bottom temperatures, with a source mask per square. |
-| `profiles.json` | 1 nm water-column profiles in 5 m layers, with a source mask. |
+| `snapshot.json` | Bottom temperatures per 7 km square, with a source mask per square. |
+| `profiles.json` | Water-column profiles per 7 km square in 5 m layers, with a source mask. |
 | `bathy.json`, `bathy-ne.jpg`, `bathy-cape.jpg` | Seafloor relief, coastline and fathom contours. |
 | `refresh_data.py` | Rebuilds both data files from ERDDAP. |
 | `.github/workflows/refresh.yml` | Runs the rebuild daily. |
