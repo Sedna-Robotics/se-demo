@@ -3,12 +3,12 @@
 A phone-first web app for showing fishermen where the water is in their target
 species' preferred temperature band, on NOAA's FIShBOT 7 km grid across New England.
 
-- **Setup screen:** who it is for, a species, and an area of interest (presets,
-  or draw a rectangle or polygon). A QR code links phones to the app.
+- **Setup screen:** a species and an area of interest (presets, or draw a
+  rectangle or polygon). A QR code links phones to the app.
 - **Results screen:** the area at the latest month with data, the share of
   squares in band, a month strip to step back through time, and a zoomable map.
-  "Change" goes back to set up the next person. Recent setups stay on the
-  device for quick switching, and the URL opens straight to the same view.
+  "Change" goes back to pick another species or area, and the URL opens
+  straight to the same view. The DOPPIO model switch sits with the stats.
 
 Live at https://sedna-robotics.github.io/se-demo/
 
@@ -78,15 +78,16 @@ Each square records which sources fed it; tapping a square lists them.
 
 ### DOPPIO model layer (optional)
 
-The Model button on the results map fills squares with no observations that
-month from DOPPIO, Rutgers' 7 km data-assimilating ROMS model
+The DOPPIO model switch on the results screen fills squares with no
+observations from DOPPIO, and adds the model's in-band squares to the month bar
+graph as hatched segments on top of the observed counts. The model comes from DOPPIO, Rutgers' 7 km data-assimilating ROMS model
 (`roms/doppio/2017_da/avg/Averages_Best_Excluding_Day1` on
 tds.marine.rutgers.edu). `refresh_data.py` samples the daily averages weekly
 for bottom temperature (last 3 years) and every 10 days for profiles (last 12
 months, 5 m layers to 150 m), places each model point in its FIShBOT cell
 (squares without one take the nearest model point within 7 km), and writes
 `doppio/doppio.json` plus one `doppio/prof-YYYY-MM.json` per month. The app
-loads them only when Model is on. Model squares are hatched and never replace
+loads them only when the switch is on. Model squares are hatched and never replace
 observations. Model bottom temperature differs from the observed squares by
 about 0.9 °C on average, with a bias of about -0.15 °C.
 
