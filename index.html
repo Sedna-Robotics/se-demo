@@ -35,8 +35,8 @@ button:disabled{opacity:.45;cursor:default}
 .scroller{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
 .scroller::-webkit-scrollbar{display:none}
 .scroller button{flex:0 0 auto;border-radius:999px;font-size:14px;min-height:38px}
-.scroller .grp{flex:0 0 auto;align-self:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:0 2px 0 6px}
-.scroller .grp:first-child{padding-left:0}
+.spprows{display:flex;flex-direction:column;gap:6px}
+.scroller .grp{flex:0 0 76px;align-self:center;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 input[type=text]{font:16px var(--sans);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;min-height:44px;box-sizing:border-box;width:100%}
 .mapwrap{position:relative;border-radius:12px;overflow:hidden;background:#123049;height:min(62vh,640px);min-height:340px}
 #mapwrap{height:min(52vh,560px)}
@@ -58,7 +58,7 @@ input[type=text]{font:16px var(--sans);color:var(--fg);background:var(--panel);b
 .strip{background:var(--tile);border-radius:10px;padding:8px 10px 2px}
 .strip .top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
 .strip .top b{color:var(--fg);font-weight:600}
-#timeline{width:100%;height:76px;display:block}
+#timeline{width:100%;height:92px;display:block}
 .legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:5px}
 .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
@@ -91,7 +91,7 @@ details[open] summary{color:var(--fg)}
     <div class="head"><h1>Species Temperature Band Map</h1><span class="dot busy" id="status"><i></i><span id="statusTxt">Loading</span></span></div>
     <div id="recentWrap" hidden><p class="label">Recent</p><div class="scroller" id="recent"></div></div>
     <div><p class="label"><label for="who">Prepared for</label></p><input id="who" type="text" placeholder="Captain or vessel (optional)" autocomplete="off"></div>
-    <div><p class="label">Species</p><div class="scroller" id="spp" role="group" aria-label="Species"></div></div>
+    <div><p class="label">Species</p><div class="spprows" id="spp" role="group" aria-label="Species"><div class="scroller" id="sppB"></div><div class="scroller" id="sppM"></div></div></div>
     <div><p class="label">Area</p><div class="scroller" id="presets" role="group" aria-label="Preset areas"></div></div>
     <div class="mapwrap" id="mapwrap"><svg id="map" role="img" aria-label="Seafloor map of New England with 1 nautical mile bottom temperature squares"></svg>
       <div class="ov tl" id="tools"><button type="button" id="tRect">Rectangle</button><button type="button" id="tPoly">Polygon</button><button type="button" id="tDone" hidden>Done</button></div>
@@ -349,11 +349,11 @@ function presetsUI(){
 /* ---------- species ---------- */
 function setSpecies(x){ sp=x; speciesUI(); if(isMid()) ensureMid(); updateStatus(); drawCoverage(); aoiSummary(); }
 function speciesUI(){
-  const spb=$('spp'); spb.innerHTML='';
-  let lastKind=null;
-  SP.forEach(x=>{
-    if(x.kind!==lastKind){ const s=document.createElement('span'); s.className='grp'; s.textContent=x.kind==='mid'?'Midwater':'Bottom'; spb.appendChild(s); lastKind=x.kind; }
-    const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.s=x.id;b.setAttribute('aria-pressed',x.id===sp.id);b.onclick=()=>setSpecies(x);spb.appendChild(b)});
+  for(const [id,kind,lab] of [['sppB','bottom','Bottom'],['sppM','mid','Midwater']]){
+    const row=$(id); row.innerHTML='';
+    const s=document.createElement('span'); s.className='grp'; s.textContent=lab; row.appendChild(s);
+    SP.filter(x=>x.kind===kind).forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.s=x.id;b.setAttribute('aria-pressed',x.id===sp.id);b.onclick=()=>setSpecies(x);row.appendChild(b)});
+  }
 }
 $('aboutBands').innerHTML='<p>Each band is the temperature range where research finds the species most often or doing best. <b>Bottom species</b> are matched against each square\'s monthly mean bottom temperature. <b>Midwater species</b> are matched against the water column: a square is green when some layer of its monthly mean profile is in the band, and its number is the middle of the thickest in-band layer, in fathoms. That is the suggested target depth for nets, jigs or other gear.</p><ul>'+
   SP.map(s=>`<li><b>${s.name}, ${fr(s.lo)} to ${fr(s.hi)} °F</b> (${s.kind==='mid'?'midwater':'bottom'}). ${s.note} Source: ${s.src}.</li>`).join('')+'</ul>';
@@ -433,7 +433,7 @@ function statsUI(){
   $('stats').innerHTML=`<div class="stat"><div class="k">${isMid()?'In-band water':'In band'} · ${when}</div><div class="v">${pct}%</div><div class="s">${s.b} of ${s.n} ${isMid()?'profiled ':''}squares</div></div>`+second;
 }
 function drawTimeline(){
-  const el=$('timeline'), w=el.clientWidth||600, h=76, m={l:1,r:1,t:6,b:18};
+  const el=$('timeline'), w=el.clientWidth||600, h=92, m={l:1,r:1,t:6,b:30};
   const tl=d3.select(el).attr('viewBox',`0 0 ${w} ${h}`); tl.selectAll('*').remove();
   const MS=cur().months, keys=[]; if(MS.length){let [y,mm]=MS[0].split('-').map(Number); const [y1,m1]=MS[MS.length-1].split('-').map(Number); while(y<y1||(y===y1&&mm<=m1)){keys.push(y+'-'+mm); mm++; if(mm>12){mm=1;y++}}}
   const stats=new Map(keys.map(k2=>{const s=monthStats(k2);return[k2,s]}));
@@ -447,8 +447,13 @@ function drawTimeline(){
     .attr('y',d=>{const s=stats.get(d);return s.n?Math.min(y(s.b/s.n),y(0)-2):y(0)-1}).attr('height',d=>{const s=stats.get(d);return s.n?Math.max(2,y(0)-y(s.b/s.n)):1}).attr('rx',1.5)
     .attr('fill',d=>stats.get(d).n?'#17a37f':ln).attr('opacity',d=>d===curK?1:0.45);
   g.filter(d=>d===curK).append('rect').attr('x',d=>x(d)-2).attr('width',x.bandwidth()+4).attr('y',m.t-4).attr('height',h-m.b-m.t+6).attr('fill','none').attr('stroke',fg).attr('stroke-width',1.5).attr('rx',3);
+  const longLbl=x.step()>=24;
+  g.append('text').attr('x',d=>x(d)+x.bandwidth()/2).attr('y',h-m.b+12).attr('text-anchor','middle').attr('font-size',longLbl?10:9.5)
+    .attr('fill',d=>d===curK?fg:muted).attr('font-weight',d=>d===curK?600:400).attr('font-family','var(--mono)')
+    .text(d=>{const mm=+d.split('-')[1];return longLbl?MO[mm-1]:MO[mm-1][0]});
   const yearTicks=keys.filter((d,i)=>+d.split('-')[1]===1||i===0);
-  g.filter(d=>yearTicks.includes(d)).append('text').attr('x',d=>x(d)).attr('y',h-5).attr('font-size',10).attr('fill',muted).attr('font-family','var(--mono)').text(d=>{const [yy,mm]=d.split('-');return +mm===1?yy:MO[mm-1]+' '+yy.slice(2)});
+  g.filter(d=>yearTicks.includes(d)).append('text').attr('x',d=>x(d)).attr('y',h-3).attr('font-size',10).attr('fill',muted).attr('font-family','var(--mono)').text(d=>d.split('-')[0]);
+  tl.selectAll('line.yr').data(yearTicks.slice(1)).join('line').attr('class','yr').attr('x1',d=>x(d)-x.step()*x.paddingInner()/2).attr('x2',d=>x(d)-x.step()*x.paddingInner()/2).attr('y1',m.t).attr('y2',h-2).attr('stroke',ln);
   const s=stats.get(curK)||{n:0}; $('tlSel').textContent=`${MO[mo-1]} ${yr}`+(s.n?` · ${Math.round(100*s.b/s.n)}%`:'');
 }
 function drawCells(){
