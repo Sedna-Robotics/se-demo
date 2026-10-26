@@ -1,8 +1,10 @@
 """Rebuild snapshot.json (bottom) and profiles.json (water column) from every useful fishing-industry source.
 
-All averaging happens server side in ERDDAP (orderByMean / orderByCount), binned to FIShBOT-sized squares
-(0.063 deg of latitude by 0.0842 deg of longitude, about 7 km or 3.8 nm at 42 N) and calendar months; profiles are
-also binned into 5 m layers. Run once a day (see .github/workflows/refresh.yml).
+ERDDAP averages each source server side (orderByMean / orderByCount) into fine 1 nm bins and calendar months
+(profiles also into 5 m layers). This script then snaps every fine bin onto the FIShBOT 7 km grid, using the cell
+definitions in fishbot_grid.json (FIShBOT's botgrid: UTM zone 19N, 7000 m cells), and combines the sources.
+It also writes grid.json with the corners of every cell that has data. Run once a day (see
+.github/workflows/refresh.yml).
 
 Usage:  python3 refresh_data.py            standard library only
 """
@@ -11,7 +13,7 @@ import csv, io, json, math, datetime, pathlib, urllib.parse, urllib.request, url
 EMOLT = "https://erddap.emolt.net/erddap/tabledap/"
 ONDECK = "https://erddap.ondeckdata.com/erddap/tabledap/"
 AREA = dict(latMin=40.3, latMax=45.2, lonMin=-74.0, lonMax=-65.5)
-DLAT, DLON, DZ = 0.063, 0.0842, 5   # FIShBOT's ~7 km grid spacing
+DLAT, DLON, DZ = 1 / 60, 0.0225, 5   # fine bins from ERDDAP before snapping to the FIShBOT grid
 BOTTOM_YEARS, PROFILE_MONTHS = 3, 12
 
 # id, label, url, extra constraints, depth variables in order of preference
@@ -111,7 +113,28 @@ def profile_job(src, t0, t1):
     return sid, out
 
 
-def center(i, j): return round((i + 0.5) * DLAT, 4), round((j + 0.5) * DLON, 4)
+def utm19(lat, lon):
+    """WGS84 lat/lon -> UTM zone 19N easting, northing (Kruger series, mm accuracy)."""
+    a=6378137.0; f=1/298.257223563; k0=0.9996; lon0=math.radians(-69.0)
+    n=f/(2-f); A=a/(1+n)*(1+n*n/4+n**4/64)
+    al=[None, n/2-2*n*n/3+5*n**3/16, 13*n*n/48-3*n**3/5, 61*n**3/240]
+    e=math.sqrt(f*(2-f)); phi=math.radians(lat); lam=math.radians(lon)-lon0
+    t=math.sinh(math.atanh(math.sin(phi))-2*math.sqrt(n)/(1+n)*math.atanh(2*math.sqrt(n)/(1+n)*math.sin(phi)))
+    xi=math.atan2(t,math.cos(lam)); eta=math.atanh(math.sin(lam)/math.sqrt(1+t*t))
+    E=500000+k0*A*(eta+sum(al[j]*math.cos(2*j*xi)*math.sinh(2*j*eta) for j in (1,2,3)))
+    N=k0*A*(xi+sum(al[j]*math.sin(2*j*xi)*math.cosh(2*j*eta) for j in (1,2,3)))
+    return E,N
+
+
+GRID = json.loads((pathlib.Path(__file__).parent / "fishbot_grid.json").read_text())
+CELL = {(c[1], c[2]): c for c in GRID["cells"]}   # (row, col) -> [id, row, col, lat, lon, corners]
+BYID = {c[0]: c for c in GRID["cells"]}
+
+
+def cell_of(i, j):
+    """FIShBOT cell containing the centre of fine bin (i, j), or None if outside the grid."""
+    E, N = utm19((i + 0.5) * DLAT, (j + 0.5) * DLON)
+    return CELL.get((int((GRID["N0"] - N) // GRID["size"]), int((E - GRID["E0"]) // GRID["size"])))
 
 
 def build_bottom(ex):
@@ -119,12 +142,14 @@ def build_bottom(ex):
     acc = {}
     for sid, rows in ex.map(lambda j: bottom_job(*j), jobs):
         for ym, i, j, t, z, n in rows:
-            a = acc.setdefault((ym, i, j), [0.0, 0.0, 0, 0, 0])
+            c = cell_of(i, j)
+            if c is None: continue
+            a = acc.setdefault((ym, c[0]), [0.0, 0.0, 0, 0, 0])
             a[0] += t * n; a[2] += n; a[4] |= BIT[sid]
             if z is not None: a[1] += z * n; a[3] += n
     obs = []
-    for (ym, i, j), (st, sz, n, nz, mask) in sorted(acc.items()):
-        la, lo = center(i, j)
+    for (ym, cid), (st, sz, n, nz, mask) in sorted(acc.items()):
+        la, lo = BYID[cid][3], BYID[cid][4]
         obs.append([int(ym[:4]), int(ym[5:7]), la, lo, round(st / n, 2), round(sz / nz) if nz else None, n, mask])
     return obs
 
@@ -134,15 +159,17 @@ def build_profiles(ex):
     acc = {}
     for sid, rows in ex.map(lambda j: profile_job(*j), jobs):
         for ym, i, j, L, t in rows:
-            cell = acc.setdefault((ym, i, j), [{}, 0])
+            c = cell_of(i, j)
+            if c is None: continue
+            cell = acc.setdefault((ym, c[0]), [{}, 0])
             a = cell[0].setdefault(L, [0.0, 0]); a[0] += t; a[1] += 1
             cell[1] |= BIT[sid]
     out = []
-    for (ym, i, j), (layers, mask) in sorted(acc.items()):
+    for (ym, cid), (layers, mask) in sorted(acc.items()):
         top = max(layers)
         temps = [round(layers[L][0] / layers[L][1], 2) if L in layers else None for L in range(top + 1)]
         if sum(t is not None for t in temps) < 2: continue
-        la, lo = center(i, j)
+        la, lo = BYID[cid][3], BYID[cid][4]
         out.append([int(ym[:4]), int(ym[5:7]), la, lo, temps, mask])
     return out
 
@@ -150,12 +177,15 @@ def build_profiles(ex):
 def main():
     here = pathlib.Path(__file__).parent
     now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes")
-    meta = {"fetched": now, "grid": [DLAT, DLON], "sources": [[sid, LABELS[sid]] for sid in SOURCE_IDS]}
+    meta = {"fetched": now, "grid": "fishbot-7km", "sources": [[sid, LABELS[sid]] for sid in SOURCE_IDS]}
     with cf.ThreadPoolExecutor(max_workers=4) as ex:
         obs = build_bottom(ex)
         prof = build_profiles(ex)
     (here / "snapshot.json").write_text(json.dumps({**meta, "obs": obs}, separators=(",", ":")))
     (here / "profiles.json").write_text(json.dumps({**meta, "dz": DZ, "profiles": prof}, separators=(",", ":")))
+    used = {(r[2], r[3]) for r in obs} | {(r[2], r[3]) for r in prof}
+    cells = [[c[3], c[4], c[0], c[5]] for c in GRID["cells"] if (c[3], c[4]) in used]
+    (here / "grid.json").write_text(json.dumps({"fetched": now, "cells": cells}, separators=(",", ":")))
     for name, rows, k in (("bottom", obs, 7), ("profile", prof, 5)):
         tally = {sid: sum(1 for r in rows if r[k] & BIT[sid]) for sid in SOURCE_IDS}
         print(f"{name}: {len(rows)} square-months; by source {({k2: v for k2, v in tally.items() if v})}")

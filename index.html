@@ -122,7 +122,7 @@ details[open] summary{color:var(--fg)}
           <li><a href="https://erddap.emolt.net/erddap/tabledap/eMOLT_RT.html" target="_blank" rel="noopener">eMOLT</a> and <a href="https://erddap.emolt.net/erddap/tabledap/MCFA_RT.html" target="_blank" rel="noopener">Maine Coast Fishermen's Association</a>: bottom readings while gear is fishing, and profiles while it is set and hauled.</li>
           <li><a href="https://erddap.ondeckdata.com/erddap/tabledap/index.html" target="_blank" rel="noopener">Commercial Fisheries Research Foundation (OnDeck ERDDAP)</a>: fixed-gear bottom sensors, trap-haul casts, Shelf Research Fleet CTD casts (with WHOI), South Fork Wind survey CTD casts and receiver thermistors, and demersal glider bottom data.</li>
         </ul>
-        <p><b>About 7 km squares.</b> ERDDAP averages readings into squares 0.063° of latitude by 0.0842° of longitude (about 7 km or 3.8 nm on a side at 42° N, the same size as NOAA's FIShBOT grid), by calendar month. Bottom squares use the last 3 years; profiles use the last 12 months in 5 m layers. Tapping a square lists which sources fed it.</p>
+        <p><b>FIShBOT grid.</b> Readings are averaged onto NOAA's FIShBOT grid, the same 7 km (3.8 nm) squares FIShBOT uses, by calendar month. Bottom squares use the last 3 years; profiles use the last 12 months in 5 m layers. Tapping a square lists which sources fed it.</p>
         <p><b>Target depth.</b> For midwater species the app interpolates each square's profile, finds where it is in the species' band, and reports the middle of the thickest in-band layer.</p>
         <p><b>Updated daily.</b> The files behind the map are rebuilt from ERDDAP once a day. The dot at the top shows when.</p>
         <p><b>Depth contours</b> are GEBCO 2024 bathymetry, in fathoms.</p></div></details>
@@ -141,6 +141,7 @@ details[open] summary{color:var(--fg)}
 <script>
 const AREA={latMin:40.3,latMax:45.2,lonMin:-74.0,lonMax:-65.5};
 let DLAT=0.063, DLON=0.0842, DZ=5;
+const GRIDP=new Map();   // FIShBOT 7 km cell corners, keyed by the cell centroid 'lat,lon'
 const APP_URL_DEFAULT='https://sedna-robotics.github.io/se-demo/';
 const NE_VIEW=[[-74.0,40.3],[-65.5,45.2]];
 const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -255,8 +256,11 @@ function layout(){
   drawCoverage(); drawAOI(); drawCells();
   root.attr('transform',T); restyle(); drawScale();
 }
-function cellRect(la,lo){const a=P([lo-DLON/2,la+DLAT/2]), b=P([lo+DLON/2,la-DLAT/2]);return{x:a[0],y:a[1],w:b[0]-a[0],h:b[1]-a[1]}}
-const rectPath=r=>`M${r.x.toFixed(2)},${r.y.toFixed(2)}h${r.w.toFixed(2)}v${r.h.toFixed(2)}h${(-r.w).toFixed(2)}Z`;
+function cellRect(la,lo){
+  const c=GRIDP.get(la+','+lo);
+  if(c){const pts=c.map(P), xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]), x=Math.min(...xs), y=Math.min(...ys);return{x,y,w:Math.max(...xs)-x,h:Math.max(...ys)-y,pts}}
+  const a=P([lo-DLON/2,la+DLAT/2]), b=P([lo+DLON/2,la-DLAT/2]);return{x:a[0],y:a[1],w:b[0]-a[0],h:b[1]-a[1]}}
+const rectPath=r=>r.pts?'M'+r.pts.map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join('L')+'Z':`M${r.x.toFixed(2)},${r.y.toFixed(2)}h${r.w.toFixed(2)}v${r.h.toFixed(2)}h${(-r.w).toFixed(2)}Z`;
 function drawCoverage(){
   covG.selectAll('*').remove(); const d=cur(); if(screen!=='setup'||!d.cells.size) return;
   let a='', b=''; d.cells.forEach(c=>{const s=rectPath(cellRect(c.la,c.lo)); if(d.aoi.has(c.k)) b+=s; else a+=s;});
@@ -273,7 +277,7 @@ function drawScale(){
   sbG.append('text').attr('x',(x0+x1)/2).attr('y',y-8).attr('text-anchor','middle').attr('class','sb').text(nm+' nmi');
 }
 function restyle(){
-  cellG.selectAll('rect').attr('stroke-width',d=>(d.k===sel?2.5:0.5)/k);
+  cellG.selectAll('path').attr('stroke-width',d=>(d.k===sel?2.5:0.5)/k);
   labG.selectAll('text.v').attr('display',d=>d.r.w*k>=15?null:'none').attr('font-size',d=>Math.min(16,Math.max(9,d.r.w*k*0.44))/k).attr('stroke-width',2/k);
   labG.selectAll('text.d').attr('display',d=>d.r.w*k>=54?null:'none').attr('font-size',10.5/k).attr('y',d=>d.r.y+d.r.h-4/k);
   contG.selectAll('path.iso').attr('stroke-width',0.9/k);
@@ -459,14 +463,14 @@ function drawTimeline(){
 }
 function drawCells(){
   dimG.selectAll('*').remove();
-  if(screen!=='view'){ROWS=[];cellG.selectAll('rect').remove();labG.selectAll('text').remove();return}
+  if(screen!=='view'){ROWS=[];cellG.selectAll('path').remove();labG.selectAll('text').remove();return}
   const d=cur(), list=d.by.get(yr+'-'+mo)||[];
   ROWS=[]; const dim={};
   list.forEach(o=>{const e=ev(o); e.r=cellRect(o[2],o[3]);
     if(d.aoi.has(e.k)) ROWS.push(e); else dim[e.cls]=(dim[e.cls]||'')+rectPath(e.r);});
   Object.entries(dim).forEach(([c,p])=>dimG.append('path').attr('d',p).attr('fill',FILL[c]).attr('fill-opacity',0.22));
-  cellG.selectAll('rect').data(ROWS,d2=>d2.k).join('rect')
-    .attr('x',d2=>d2.r.x).attr('y',d2=>d2.r.y).attr('width',d2=>d2.r.w).attr('height',d2=>d2.r.h)
+  cellG.selectAll('path').data(ROWS,d2=>d2.k).join('path')
+    .attr('d',d2=>rectPath(d2.r)).attr('stroke-linejoin','round')
     .attr('fill',d2=>FILL[d2.cls]).attr('fill-opacity',0.92)
     .attr('stroke',d2=>d2.k===sel?'#ffd84a':'rgba(10,33,62,0.35)')
     .style('cursor','pointer').on('click',(e,d2)=>{sel=d2.k;drawCells();cellReadout()});
@@ -503,7 +507,7 @@ function fmtUpdated(iso){const d=new Date(iso), today=new Date();return d.toDate
 async function loadKind(kind,file,key){
   try{
     const r=await fetch(file,{cache:'no-cache'}); if(!r.ok) throw new Error(r.status); const snap=await r.json();
-    if(snap.sources) SRC=snap.sources; if(snap.grid){DLAT=snap.grid[0];DLON=snap.grid[1];} if(snap.dz) DZ=snap.dz; ingest(kind,snap[key]);
+    if(snap.sources) SRC=snap.sources; if(snap.dz) DZ=snap.dz; ingest(kind,snap[key]);
     const ageH=(Date.now()-new Date(snap.fetched))/36e5;
     setStatus(kind,ageH<36?'live':'stale','Updated '+fmtUpdated(snap.fetched));
   }catch(e){ setStatus(kind,'stale','No data, reload'); }
@@ -534,6 +538,7 @@ function drawQR(){
   layout(); goTo(fitCover(),0);
   const shared=readHash();
   if(shared) applySetup(shared); else setAOI(PRESETS[0].poly,PRESETS[0].name);
+  try{ const g=await (await fetch('grid.json',{cache:'no-cache'})).json(); g.cells.forEach(c=>GRIDP.set(c[0]+','+c[1],c[3])); }catch(e){}
   const bottom=loadKind('bottom','snapshot.json','obs');
   if(shared){
     const poll=setInterval(()=>{ if(cur().ready){ clearInterval(poll); if(screen!=='view') openView(); } },150);

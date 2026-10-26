@@ -1,7 +1,7 @@
 # Species Temperature Band Map
 
 A phone-first web app for showing fishermen where the water is in their target
-species' preferred temperature band, on FIShBOT-sized (about 7 km) squares across New England.
+species' preferred temperature band, on NOAA's FIShBOT 7 km grid across New England.
 
 - **Setup screen:** who it is for, a species, and an area of interest (presets,
   or draw a rectangle or polygon). A QR code links phones to the app.
@@ -29,8 +29,10 @@ surface and deepest temperatures. Bands and sources are in the
 
 All sources are temperature sensors on commercial fishing gear or fishing-vessel
 research fleets. `refresh_data.py` asks each ERDDAP server to average its data
-into squares the size of NOAA's FIShBOT grid (0.063° of latitude by 0.0842° of
-longitude, about 7 km or 3.8 nm on a side at 42° N) and calendar months, then combines the sources. Bottom squares cover the
+into fine 1 nm bins by calendar month, then snaps every bin onto the FIShBOT
+grid (FIShBOT's own `botgrid`: 7000 m cells in UTM zone 19N, stored here as
+`fishbot_grid.json`) and combines the sources. Squares line up exactly with
+FIShBOT's, so values can be compared cell for cell. Bottom squares cover the
 last 3 years; water-column profiles cover the last 12 months in 5 m layers.
 
 | Source | Server | Used for |
@@ -76,8 +78,10 @@ contours are GEBCO 2024.
 | File | What it is |
 |---|---|
 | `index.html` | The whole app. Loads d3 7.8.5 and qrcode-generator 1.4.4 from cdnjs. |
-| `snapshot.json` | Bottom temperatures per 7 km square, with a source mask per square. |
-| `profiles.json` | Water-column profiles per 7 km square in 5 m layers, with a source mask. |
+| `grid.json` | Corners of every FIShBOT cell that has data, for drawing. |
+| `fishbot_grid.json` | The full FIShBOT grid (cell id, row, column, centroid, corners). |
+| `snapshot.json` | Bottom temperatures per FIShBOT cell, with a source mask per square. |
+| `profiles.json` | Water-column profiles per FIShBOT cell in 5 m layers, with a source mask. |
 | `bathy.json`, `bathy-ne.jpg`, `bathy-cape.jpg` | Seafloor relief, coastline and fathom contours. |
 | `refresh_data.py` | Rebuilds both data files from ERDDAP. |
 | `.github/workflows/refresh.yml` | Runs the rebuild daily. |
