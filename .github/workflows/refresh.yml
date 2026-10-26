@@ -1,0 +1,36 @@
+name: Refresh data
+
+on:
+  schedule:
+    - cron: "17 9 * * *"   # daily, 09:17 UTC (about 5 a.m. Eastern)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rebuild snapshot.json and profiles.json from ERDDAP
+        run: python3 refresh_data.py
+      - name: Commit if the data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898799+github-actions[bot]@users.noreply.github.com"
+          git add snapshot.json profiles.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Daily data refresh"
+            git push
+          fi
