@@ -1,0 +1,268 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<title>Species Temperature Band Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: controls band on top, chart-style map fills the rest, readout and sources beneath. */
+:root{
+  --bg:#f3f5f4; --panel:#ffffff; --fg:#14211f; --muted:#5c6b68; --line:#d3dbd8;
+  --accent:#13866a; --onAccent:#ffffff; --live:#13866a; --stale:#a8660b;
+  --sans:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1514; --panel:#172120; --fg:#e6eeec; --muted:#9aaba7; --line:#2a3634;
+  --accent:#2fbf95; --onAccent:#05221a; --live:#3cc89f; --stale:#e3a33b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1514; --panel:#172120; --fg:#e6eeec; --muted:#9aaba7; --line:#2a3634;
+  --accent:#2fbf95; --onAccent:#05221a; --live:#3cc89f; --stale:#e3a33b; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:16px;line-height:1.4}
+.app{display:flex;flex-direction:column;min-height:100%;box-sizing:border-box;gap:10px;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:1100px;margin:0 auto}
+h1{font-size:19px;font-weight:600;margin:0;text-wrap:balance}
+.sub{font-size:13px;color:var(--muted);margin:2px 0 0;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.status i{width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block}
+.status.live{color:var(--live)} .status.live i{background:var(--live)}
+.status.stale{color:var(--stale)} .status.stale i{background:var(--stale)}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+button{font:500 15px var(--sans);color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-height:36px;cursor:pointer}
+button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--onAccent)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.4;cursor:default}
+.yrs button{flex:1}
+.months button{flex:1 0 calc(16.66% - 6px);padding:6px 0;font-family:var(--mono);font-size:14px}
+.spp button{flex:1 0 calc(25% - 6px);padding:6px 4px;font-size:14px}
+.note{font-size:13px;color:var(--muted);margin:0}
+.note b{color:var(--fg);font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:14px;height:14px;border-radius:3px;display:inline-block}
+.mapwrap{flex:1;min-height:460px;position:relative;border-radius:10px;overflow:hidden;background:#123049}
+#map{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.mapbtns{position:absolute;right:8px;top:8px;display:flex;gap:6px}
+.mapbtns button{font-size:13px;min-height:34px;padding:6px 10px;background:rgba(255,255,255,.92);color:#14211f;border-color:transparent}
+.read{font-size:15px;min-height:64px}
+.read b{font-weight:600}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.hint,.src{font-size:12px;color:var(--muted);margin:0}
+.src a{color:var(--muted)}
+@media (min-width:860px){.mapwrap{min-height:620px}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+<div class="app">
+  <div>
+    <h1 id="h1">American lobster temperature band</h1>
+    <p class="sub"><span>Preferred bottom temperature by species · FIShBOT monthly means · depth contours in fathoms</span><span class="status" id="status"><i></i><span id="statusTxt">Loading bottom temperatures</span></span></p>
+  </div>
+  <div class="row spp" id="spp" role="group" aria-label="Species"></div>
+  <p class="note" id="note"></p>
+  <div class="row yrs" id="yrs" role="group" aria-label="Year"></div>
+  <div class="row months" id="mos" role="group" aria-label="Month"></div>
+  <div class="legend" id="legend"></div>
+  <div class="mapwrap"><svg id="map" role="img" aria-label="Shaded seafloor map of New England waters with FIShBOT bottom temperature grid cells"></svg>
+    <div class="mapbtns"><button id="ne" type="button">All New England</button><button id="home" type="button">Outer Cape</button></div></div>
+  <div class="read" id="read" aria-live="polite">Loading bottom temperatures from NOAA ERDDAP.</div>
+  <p class="hint">Pinch or scroll to zoom, drag to pan. Tap a square for its depth and sample count. Counts cover the squares in view.</p>
+  <p class="src">Data: <a href="https://comet.nefsc.noaa.gov/erddap/info/ondeckdata_erddap_4319_ff7a_72eb/index.html" target="_blank" rel="noopener">NOAA NEFSC ERDDAP, FIShBOT</a> (eMOLT, CFRF, Study Fleet, ECOMON and partners) · Bathymetry: GEBCO 2024</p>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+const ERDDAP='https://comet.nefsc.noaa.gov/erddap/tabledap/ondeckdata_erddap_4319_ff7a_72eb.json';
+const AREA={latMin:40.3,latMax:45.2,lonMin:-74.0,lonMax:-65.5};
+const START=`${new Date().getUTCFullYear()-2}-01-01`;
+const HOME_VIEW=[[-70.02,41.33],[-69.165,42.04]];
+const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const F=c=>c*9/5+32, FM=m=>Math.round(m/1.8288), fr=c=>Math.round(F(c));
+const SP=[
+ {id:'lobster',btn:'Lobster',name:'American lobster',lo:12,hi:18,note:'Lab preference near 61 °F; stress above 68 °F. ASMFC; Crossin et al. 1998.'},
+ {id:'scallop',btn:'Scallop',name:'Sea scallop',lo:10,hi:15,note:'Best growth 50 to 59 °F in a Gulf of Maine growth study.'},
+ {id:'skate',btn:'Skate',name:'Winter skate',lo:5,hi:15,note:'Adults mostly at 41 to 59 °F in NOAA trawl surveys. NOAA EFH.'},
+ {id:'dogfish',btn:'Dogfish',name:'Spiny dogfish',lo:6,hi:12,note:'Most abundant below 54 °F; Stellwagen Bank mean 46 °F.'},
+ {id:'bsb',btn:'Sea bass',name:'Black sea bass',lo:10,hi:18,note:'Peak catch near 54 °F; habitat declines above 64 °F; head offshore at 50 to 54 °F; stop feeding below 43 °F. MAFMC 2024.'},
+ {id:'monk',btn:'Monkfish',name:'Monkfish',lo:4,hi:14,note:'Adults most abundant at 39 to 57 °F in NOAA trawl surveys. EFH source document.'},
+ {id:'cod',btn:'Cod',name:'Atlantic cod',lo:7,hi:14,note:'Adults prefer about 45 to 59 °F; southern New England catches mostly below 57 °F.'},
+ {id:'fluke',btn:'Fluke',name:'Summer flounder',lo:14,hi:21,note:'From juvenile studies: strong growth at 57 to 70 °F, little below 46 °F. Adults leave inshore in fall. EFH source document.'}
+];
+let sp=SP[0];
+const inBand=c=>{const f=fr(c);return f>=fr(sp.lo)&&f<=fr(sp.hi)};
+const cls=c=>{if(inBand(c))return 'band';if(fr(c)>fr(sp.hi))return 'warm';const g=fr(sp.lo)-fr(c);return g<=4?'c2':g<=9?'c1':'c0'};
+const FILL={band:'#17a37f',warm:'#e3a33b',c2:'#5b95d6',c1:'#9cc2ea',c0:'#d7e7f7'};
+const INK={band:'#ffffff',warm:'#3d2604',c2:'#ffffff',c1:'#0b2f55',c0:'#0b2f55'};
+
+let OBS=[], CELLS=new Map(), BYMONTH=new Map(), YEARS=[], yr=null, mo=null, sel=null, B=null;
+const $=id=>document.getElementById(id);
+const spb=$('spp'), yb=$('yrs'), mb=$('mos');
+SP.forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.s=x.id;b.onclick=()=>{sp=x;draw()};spb.appendChild(b)});
+MO.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.textContent=m;b.dataset.m=i+1;b.onclick=()=>{mo=i+1;sel=null;draw()};mb.appendChild(b)});
+
+/* ---- projection: equirectangular with cos(lat0) aspect, so the bathymetry rasters map exactly ---- */
+const LAT0=42.7, CX=Math.cos(LAT0*Math.PI/180);
+let S0=1, W0=0, H0=0;
+const NE_VIEW=[[-74.0,40.3],[-65.5,45.2]];
+const P=([lon,lat])=>[(lon-NE_VIEW[0][0])*CX*S0, (NE_VIEW[1][1]-lat)*S0];
+const svg=d3.select('#map'), root=svg.append('g');
+const baseG=root.append('g'), contG=root.append('g'), gridG=root.append('g'), cellG=root.append('g'), labG=root.append('g'), placeG=root.append('g'), sbG=svg.append('g');
+let k=1, T=d3.zoomIdentity, kHome=1, homeT=d3.zoomIdentity;
+const zoom=d3.zoom().on('zoom',e=>{T=e.transform;k=T.k;root.attr('transform',T);restyle();drawScale()}).on('end',()=>summary());
+svg.call(zoom);
+function fitT(view){
+  const a=P(view[0]), b=P(view[1]), x0=Math.min(a[0],b[0]), x1=Math.max(a[0],b[0]), y0=Math.min(a[1],b[1]), y1=Math.max(a[1],b[1]);
+  const kk=Math.min(W0/(x1-x0),H0/(y1-y0))*0.98;
+  return d3.zoomIdentity.translate(W0/2-kk*(x0+x1)/2,H0/2-kk*(y0+y1)/2).scale(kk);
+}
+$('ne').onclick=()=>svg.transition().duration(500).call(zoom.transform,fitT(NE_VIEW));
+$('home').onclick=()=>svg.transition().duration(500).call(zoom.transform,homeT);
+
+const PLACES=[['Chatham',41.682,-69.96,0,.3],['Provincetown',42.052,-70.186,0,.3],['Nantucket',41.283,-70.10,0,.3],['New Bedford',41.636,-70.93,0,.3],['Boston',42.36,-71.06,0,0],['Gloucester',42.61,-70.66,0,.3],['Portland',43.66,-70.26,0,0],['Point Judith',41.36,-71.48,0,.3],['Montauk',41.07,-71.94,0,.3],['Bar Harbor',44.39,-68.20,0,0],['Georges Bank',41.45,-67.75,1,0],['Gulf of Maine',43.0,-68.6,1,0]];
+function layout(first){
+  const el=$('map'); const w=el.clientWidth, h=el.clientHeight; if(!w||!h) return;
+  W0=w; H0=h; svg.attr('viewBox',`0 0 ${w} ${h}`);
+  const a=[(NE_VIEW[1][0]-NE_VIEW[0][0])*CX, NE_VIEW[1][1]-NE_VIEW[0][1]];
+  S0=Math.min(w/a[0],h/a[1]);
+  const ne=fitT(NE_VIEW), hm=fitT(HOME_VIEW);
+  homeT=hm; kHome=hm.k;
+  zoom.scaleExtent([Math.min(1,ne.k)*0.9,kHome*6]).extent([[0,0],[w,h]]);
+  const p0=P([-74.6,45.6]), p1=P([-64.9,39.9]); zoom.translateExtent([p0,p1]);
+  baseG.selectAll('*').remove(); contG.selectAll('*').remove(); placeG.selectAll('*').remove();
+  if(B){
+    for(const key of ['ne','cape']){
+      const [W,E,S,N]=B[key].bounds, q=P([W,N]), r=P([E,S]);
+      baseG.append('image').attr('href',B[key].img).attr('x',q[0]).attr('y',q[1]).attr('width',r[0]-q[0]).attr('height',r[1]-q[1]).attr('preserveAspectRatio','none');
+    }
+    const line=d3.line();
+    baseG.selectAll('path.coast').data(B.coast).join('path').attr('class','coast').attr('d',s=>line(s.map(P))).attr('fill','none').attr('stroke','#f4ead2');
+    contG.selectAll('path.iso').data(B.cont).join('path').attr('class','iso').attr('d',c=>line(c.c.map(P))).attr('fill','none').attr('stroke','#ffffff').attr('stroke-opacity',.4);
+    const labs=[], minD=70/hm.k; B.cont.forEach(c=>{ if(c.c.length<30) return; for(let i=Math.floor(c.c.length/2)%90;i<c.c.length;i+=90){ const p=P(c.c[i]); if(labs.every(l=>Math.hypot(l.p[0]-p[0],l.p[1]-p[1])>minD)) labs.push({fm:c.fm,p}); } });
+    contG.selectAll('text.isol').data(labs).join('text').attr('class','isol').attr('x',d=>d.p[0]).attr('y',d=>d.p[1]).attr('dy','0.35em').attr('text-anchor','middle').text(d=>d.fm+' fm');
+  }
+  placeG.selectAll('text').data(PLACES).join('text').attr('class',d=>d[3]?'place sea':'place').attr('x',d=>P([d[2],d[1]])[0]).attr('y',d=>P([d[2],d[1]])[1]).attr('text-anchor','middle').text(d=>d[0]);
+  drawGrid();
+  if(first) svg.call(zoom.transform,homeT); else { root.attr('transform',T); restyle(); drawScale(); }
+  draw();
+}
+function cellRect(la,lo){const dLat=0.0630, dLon=0.0630/Math.cos(la*Math.PI/180);const a=P([lo-dLon/2,la+dLat/2]), b=P([lo+dLon/2,la-dLat/2]);return{x:a[0],y:a[1],w:b[0]-a[0],h:b[1]-a[1]}}
+function drawGrid(){
+  const all=[...CELLS.values()].map(c=>({k:c.k,r:cellRect(c.la,c.lo)}));
+  gridG.selectAll('rect').data(all,d=>d.k).join('rect').attr('x',d=>d.r.x).attr('y',d=>d.r.y).attr('width',d=>d.r.w).attr('height',d=>d.r.h)
+    .attr('fill','none').attr('stroke','rgba(255,255,255,0.22)');
+}
+function niceNm(px){for(const n of [1,2,5,10,20,50,100]) if(n*px>=60) return n; return 100}
+function drawScale(){
+  sbG.selectAll('*').remove(); if(!W0) return;
+  const pxNm=S0/60*k, nm=niceNm(pxNm), len=nm*pxNm, x1=W0-14, x0=x1-len, y=H0-14;
+  sbG.append('rect').attr('x',x0-10).attr('y',y-24).attr('width',len+20).attr('height',32).attr('rx',6).attr('fill','rgba(255,255,255,.9)');
+  sbG.append('line').attr('x1',x0).attr('x2',x1).attr('y1',y).attr('y2',y).attr('stroke','#14211f').attr('stroke-width',2);
+  [x0,x1].forEach(x=>sbG.append('line').attr('x1',x).attr('x2',x).attr('y1',y-5).attr('y2',y+3).attr('stroke','#14211f').attr('stroke-width',2));
+  sbG.append('text').attr('x',(x0+x1)/2).attr('y',y-9).attr('text-anchor','middle').attr('class','sb').text(nm+' nmi');
+}
+function restyle(){
+  cellG.selectAll('rect').attr('stroke-width',d=>(d.k===sel?2.5:0.8)/k);
+  gridG.selectAll('rect').attr('stroke-width',0.6/k).attr('display',k>=kHome*0.35?null:'none');
+  labG.selectAll('text.v').attr('display',d=>d.r.w*k>=18?null:'none').attr('font-size',d=>Math.min(17,d.r.w*k*0.36)/k);
+  labG.selectAll('text.d').attr('display',d=>d.r.w*k>=52?null:'none').attr('font-size',11/k).attr('y',d=>d.r.y+d.r.h-4/k);
+  contG.selectAll('path.iso').attr('stroke-width',0.9/k);
+  contG.selectAll('text.isol').attr('font-size',11/k).attr('display',k>=kHome*0.6?null:'none');
+  baseG.selectAll('path.coast').attr('stroke-width',1/k);
+  placeG.selectAll('text').attr('font-size',d=>(d[3]?12:12.5)/k).attr('stroke-width',3/k).attr('display',d=>k>=kHome*d[4]?null:'none');
+  labG.selectAll('text.v').attr('stroke-width',2/k);
+  contG.selectAll('text.isol').attr('stroke-width',3/k);
+}
+function visibleRows(rows){
+  if(!W0) return rows;
+  const x0=-T.x/k, y0=-T.y/k, x1=(W0-T.x)/k, y1=(H0-T.y)/k;
+  return rows.filter(d=>{const cx=d.r.x+d.r.w/2, cy=d.r.y+d.r.h/2; return cx>=x0&&cx<=x1&&cy>=y0&&cy<=y1});
+}
+let ROWS=[];
+function draw(){
+  spb.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.s===sp.id));
+  $('h1').textContent=sp.name+' temperature band';
+  $('note').innerHTML=`<b>${fr(sp.lo)} to ${fr(sp.hi)} °F</b> · ${sp.note}`;
+  const sw=(c,t)=>`<span><i class="sw" style="background:${FILL[c]}"></i>${t}</span>`;
+  $('legend').innerHTML=sw('band','In band')+sw('warm','Warmer')+sw('c2','1 to 4 °F colder')+sw('c1','5 to 9 colder')+sw('c0','10+ colder');
+  yb.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.y===yr));
+  mb.querySelectorAll('button').forEach(b=>{const has=BYMONTH.has(yr+'-'+b.dataset.m);b.disabled=!has&&OBS.length>0;b.setAttribute('aria-pressed',+b.dataset.m===mo)});
+  const list=BYMONTH.get(yr+'-'+mo)||[];
+  ROWS=list.map(o=>{const r=cellRect(o[2],o[3]);return{k:o[2]+','+o[3],t:o[4],z:o[5],n:o[6],r}});
+  cellG.selectAll('rect').data(ROWS,d=>d.k).join('rect')
+    .attr('x',d=>d.r.x).attr('y',d=>d.r.y).attr('width',d=>d.r.w).attr('height',d=>d.r.h)
+    .attr('fill',d=>FILL[cls(d.t)]).attr('fill-opacity',0.86)
+    .attr('stroke',d=>d.k===sel?'#ffd84a':'rgba(255,255,255,0.6)')
+    .style('cursor','pointer').on('click',(e,d)=>{sel=d.k;draw()});
+  labG.selectAll('text.v').data(ROWS,d=>d.k).join('text').attr('class','v')
+    .attr('x',d=>d.r.x+d.r.w/2).attr('y',d=>d.r.y+d.r.h/2).attr('dy','0.36em').attr('text-anchor','middle')
+    .attr('fill',d=>INK[cls(d.t)]).attr('font-weight',d=>inBand(d.t)?600:500).text(d=>fr(d.t));
+  labG.selectAll('text.d').data(ROWS,d=>d.k).join('text').attr('class','d')
+    .attr('x',d=>d.r.x+d.r.w/2).attr('text-anchor','middle')
+    .attr('fill',d=>INK[cls(d.t)]).attr('opacity',.8).text(d=>FM(d.z)+' fm');
+  restyle(); summary();
+}
+function summary(){
+  if(!OBS.length) return;
+  const vis=visibleRows(ROWS), inb=vis.filter(d=>inBand(d.t)), dz=inb.map(d=>FM(d.z));
+  let t=`<b>${MO[mo-1]} ${yr}</b>: `+(vis.length?`<span class="num">${inb.length}</span> of <span class="num">${vis.length}</span> sampled squares in view are in the ${sp.btn.toLowerCase()} band`+(dz.length?(Math.min(...dz)===Math.max(...dz)?`, at <span class="num">${dz[0]}</span> fathoms`:`, <span class="num">${Math.min(...dz)}</span> to <span class="num">${Math.max(...dz)}</span> fathoms`):''):'no sampled squares in view this month');
+  const s=ROWS.find(d=>d.k===sel);
+  if(s) t+='<br>'+`Selected: <span class="num">${F(s.t).toFixed(1)} °F</span> at about <span class="num">${FM(s.z)}</span> fathoms, <span class="num">${s.n}</span> day${s.n>1?'s':''} sampled`;
+  $('read').innerHTML=t;
+}
+
+/* ---- data: live from ERDDAP (JSONP, since ERDDAP sends no CORS header), else the bundled snapshot ---- */
+function erddapUrl(vars,agg){
+  const parts=[vars,`latitude>=${AREA.latMin}`,`latitude<=${AREA.latMax}`,`longitude>=${AREA.lonMin}`,`longitude<=${AREA.lonMax}`,`time>=${START}`,`${agg}("time/1month,latitude,longitude")`];
+  return ERDDAP+'?'+parts.map(p=>encodeURIComponent(p).replace(/%3D/g,'=').replace(/%2C/g,',')).join('&');
+}
+function jsonp(url,ms){
+  return new Promise((res,rej)=>{
+    const cb='erd_'+Math.random().toString(36).slice(2), s=document.createElement('script');
+    const done=()=>{clearTimeout(tm);try{delete window[cb]}catch(e){window[cb]=undefined}s.remove()};
+    const tm=setTimeout(()=>{done();rej(new Error('timeout'))},ms);
+    window[cb]=d=>{done();res(d)};
+    s.onerror=()=>{done();rej(new Error('blocked'))};
+    s.src=url+'&.jsonp='+cb; document.head.appendChild(s);
+  });
+}
+async function loadLive(){
+  const [m,c]=await Promise.all([jsonp(erddapUrl('time,latitude,longitude,depth,temperature','orderByMean'),30000),
+                                 jsonp(erddapUrl('time,latitude,longitude,temperature','orderByCount'),30000)]);
+  const cnt=new Map(); c.table.rows.forEach(r=>cnt.set(r[0]+'|'+(+r[1]).toFixed(4)+'|'+(+r[2]).toFixed(4),r[3]));
+  const obs=m.table.rows.filter(r=>r[4]!=null).map(r=>{const la=+(+r[1]).toFixed(4), lo=+(+r[2]).toFixed(4);
+    return [+r[0].slice(0,4),+r[0].slice(5,7),la,lo,+(+r[4]).toFixed(2),Math.round(r[3]),cnt.get(r[0]+'|'+la.toFixed(4)+'|'+lo.toFixed(4))||1]});
+  if(!obs.length) throw new Error('empty');
+  return {obs,fetched:new Date().toISOString(),live:true};
+}
+async function loadSnapshot(){
+  const r=await fetch('snapshot.json'); if(!r.ok) throw new Error('no snapshot'); const j=await r.json(); j.live=false; return j;
+}
+function ingest(d){
+  OBS=d.obs; CELLS=new Map(); BYMONTH=new Map();
+  OBS.forEach(o=>{const key=o[2]+','+o[3]; if(!CELLS.has(key)) CELLS.set(key,{k:key,la:o[2],lo:o[3],z:o[5]});
+    const mk=o[0]+'-'+o[1]; if(!BYMONTH.has(mk)) BYMONTH.set(mk,[]); BYMONTH.get(mk).push(o)});
+  YEARS=[...new Set(OBS.map(o=>o[0]))].sort();
+  const last=OBS.reduce((a,o)=>(o[0]*12+o[1]>a[0]*12+a[1]?o:a),OBS[0]); yr=last[0]; mo=last[1];
+  yb.innerHTML=''; YEARS.forEach(y=>{const b=document.createElement('button');b.type='button';b.textContent=y;b.dataset.y=y;
+    b.onclick=()=>{yr=y;sel=null;if(!BYMONTH.has(yr+'-'+mo)){const ms=[...BYMONTH.keys()].filter(k=>k.startsWith(y+'-')).map(k=>+k.split('-')[1]);mo=ms.length?Math.max(...ms):mo}draw()};yb.appendChild(b)});
+  const when=new Date(d.fetched), st=$('status');
+  st.className='status '+(d.live?'live':'stale');
+  $('statusTxt').textContent=d.live?`Live from NOAA ERDDAP · loaded ${when.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`:`Saved snapshot from ${when.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})}`;
+  drawGrid(); draw();
+}
+const st=document.createElement('style');
+st.textContent=`#map text.v{font-family:var(--mono);paint-order:stroke;stroke:rgba(0,0,0,.18)}
+#map text.d{font-family:var(--mono)}
+#map text.isol{font-family:var(--sans);fill:#ffffff;fill-opacity:.85;paint-order:stroke;stroke:rgba(10,33,62,.7)}
+#map text.place{font-family:var(--sans);font-weight:600;fill:#3b3324;paint-order:stroke;stroke:rgba(244,234,210,.85)}
+#map text.place.sea{font-style:italic;font-weight:500;fill:#dce9f2;stroke:rgba(10,33,62,.6)}
+#map text.sb{font-family:var(--mono);font-size:12px;fill:#14211f}`;
+document.head.appendChild(st);
+let rz; window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(()=>layout(false),150)});
+(async()=>{
+  try{ const r=await fetch('bathy.json'); B=await r.json(); }catch(e){ B=null; }
+  layout(true);
+  let d=null;
+  try{ d=await loadLive(); }catch(e){ try{ d=await loadSnapshot(); }catch(e2){ d=null; } }
+  if(d) ingest(d);
+  else { $('status').className='status stale'; $('statusTxt').textContent='Data unavailable'; $('read').textContent='Bottom temperatures could not be loaded from NOAA ERDDAP, and no saved snapshot was found. Check the connection and reload.'; }
+})();
+</script>
+
+</body></html>
