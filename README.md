@@ -8,7 +8,8 @@ species' preferred temperature band, on NOAA's FIShBOT 7 km grid across New Engl
 - **Results screen:** the area at the latest month with data, the share of
   squares in band, a month strip to step back through time, and a zoomable map.
   "Change" goes back to pick another species or area, and the URL opens
-  straight to the same view. The DOPPIO model switch sits with the stats.
+  straight to the same view. The DOPPIO model switch sits with the stats, and
+  a fm · °F / m · °C selector at the top is remembered on each device.
 
 Live at https://sedna-robotics.github.io/se-demo/
 
@@ -35,7 +36,7 @@ grid (FIShBOT's own `botgrid`: 7000 m cells in UTM zone 19N, stored here as
 `fishbot_grid.json`) and combines the sources. The DMF ArcGIS layers are point data, so each reading is
 placed directly in the FIShBOT cell that contains it. Squares line up exactly with
 FIShBOT's, so values can be compared cell for cell. Bottom squares cover the
-last 3 years; water-column profiles cover the last 12 months in 5 m layers.
+last 3 years, and so do water-column profiles, in 5 m layers.
 
 | Source | Server | Used for |
 |---|---|---|
@@ -83,8 +84,8 @@ observations from DOPPIO, and adds the model's in-band squares to the month bar
 graph as hatched segments on top of the observed counts. The model comes from DOPPIO, Rutgers' 7 km data-assimilating ROMS model
 (`roms/doppio/2017_da/avg/Averages_Best_Excluding_Day1` on
 tds.marine.rutgers.edu). `refresh_data.py` samples the daily averages weekly
-for bottom temperature (last 3 years) and every 10 days for profiles (last 12
-months, 5 m layers to 150 m), places each model point in its FIShBOT cell
+for bottom temperature (last 3 years) and every 10 days for profiles (last 3 years,
+5 m layers to 150 m), places each model point in its FIShBOT cell
 (squares without one take the nearest model point within 7 km), and writes
 `doppio/doppio.json` plus one `doppio/prof-YYYY-MM.json` per month. The app
 loads them only when the switch is on. Model squares are hatched and never replace
@@ -106,7 +107,7 @@ and commits `snapshot.json`, `profiles.json`, `grid.json` and `doppio/` when the
 redeploys GitHub Pages. Run it by hand from the Actions tab ("Refresh data",
 then "Run workflow"), or locally:
 
-    python3 refresh_data.py      # about 20 minutes, standard library only
+    python3 refresh_data.py      # about 30 minutes, standard library only
 
 The dot at the top of the app shows when the files were last rebuilt. Depth
 contours are GEBCO 2024.

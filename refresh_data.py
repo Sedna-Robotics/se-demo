@@ -18,7 +18,7 @@ GLIDERS = "https://gliders.ioos.us/erddap/"
 DMF = "https://services1.arcgis.com/7iJyYTjCtKsZS1LR/arcgis/rest/services/"
 AREA = dict(latMin=40.3, latMax=45.2, lonMin=-74.0, lonMax=-65.5)
 DLAT, DLON, DZ = 1 / 60, 0.0225, 5   # fine bins from ERDDAP before snapping to the FIShBOT grid
-BOTTOM_YEARS, PROFILE_MONTHS = 3, 12
+BOTTOM_YEARS = 3   # bottom and profiles both start in January, BOTTOM_YEARS - 1 years ago
 
 # id, label, url, extra constraints, depth variables in order of preference
 BOTTOM = [
@@ -49,6 +49,10 @@ LABELS = {s[0]: s[1] for s in BOTTOM + PROFILES}
 LABELS.update({"ioos_gliders": "IOOS Glider DAC profiles", "dmf_do": "Mass. DMF Cape Cod Bay DO study fleet",
                "dmf_stations": "Mass. DMF bottom temperature stations"})
 BIT = {sid: 1 << i for i, sid in enumerate(SOURCE_IDS)}
+
+
+def window_start():
+    return datetime.date.today().year - BOTTOM_YEARS + 1, 1
 
 
 def months_back(n):
@@ -204,7 +208,7 @@ def dmf_bottom():
 
 def glider_sources():
     """IOOS Glider DAC deployments in the area over the profile window (delayed-mode copy preferred)."""
-    y, m = months_back(PROFILE_MONTHS)
+    y, m = window_start()
     q = {"page": 1, "itemsPerPage": 1000, "searchFor": "", "protocol": "tabledap", "minLat": AREA["latMin"], "maxLat": AREA["latMax"],
          "minLon": AREA["lonMin"], "maxLon": AREA["lonMax"], "minTime": f"{y}-{m:02d}-01T00:00:00Z"}
     try:
@@ -240,7 +244,7 @@ def build_bottom(ex):
 
 
 def build_profiles(ex):
-    y, m = months_back(PROFILE_MONTHS)
+    y, m = window_start()
     jobs = [(s, *w) for s in PROFILES for w in windows((y, m), 3)]
     gl = glider_sources()
     print(f"  {len(gl)} glider deployments")
@@ -299,7 +303,7 @@ def dods(ctx, var, idx):
 
 
 def build_doppio(ex):
-    """Monthly DOPPIO bottom temperature (3 years) and 5 m profiles (12 months) per FIShBOT cell."""
+    """Monthly DOPPIO bottom temperature (3 years) and 5 m profiles (same 3 years) per FIShBOT cell."""
     try: ctx = doppio_ctx()
     except Exception as e: print(f"  ! doppio {e}"); return None
     NE, NX = 106, 242
@@ -344,7 +348,7 @@ def build_doppio(ex):
     ym = lambda d: f"{d.year}-{d.month:02d}"
     y0, m0 = datetime.date.today().year - BOTTOM_YEARS + 1, 1
     bdays = [(i, d) for i, d in days if (d.year, d.month) >= (y0, m0)][::-1][::DOPPIO_BOTTOM_STEP]
-    py, pm = months_back(PROFILE_MONTHS)
+    py, pm = window_start()
     pdays = [(i, d) for i, d in days if (d.year, d.month) >= (py, pm)][::-1][::DOPPIO_PROFILE_STEP]
     sub = [(e0, 1, e1), (x0, 1, x1)]
 

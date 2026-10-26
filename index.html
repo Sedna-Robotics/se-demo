@@ -74,6 +74,10 @@ button.stat.mtog[aria-pressed="true"] .knob::after{left:14px}
 .read b,.read .num{color:var(--fg)}
 .navrow{display:flex;justify-content:space-between;gap:8px}
 .navrow button{font-size:14px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;border-radius:0;min-height:38px;padding:6px 12px;font-family:var(--mono);font-size:13px;background:transparent}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--onAccent)}
 .who{font-size:13px;color:var(--muted);margin:0 0 2px}
 .qr{display:flex;gap:12px;align-items:center;background:var(--tile);border-radius:12px;padding:10px 12px}
 .qr #qr{flex:0 0 auto;background:#fff;border-radius:8px;padding:6px;line-height:0}
@@ -108,7 +112,7 @@ details[open] summary{color:var(--fg)}
   </section>
 
   <section id="view" class="screen" hidden>
-    <div class="navrow"><button type="button" id="edit">‹ Change</button></div>
+    <div class="navrow"><button type="button" id="edit">‹ Change</button><div class="seg" id="units" role="group" aria-label="Units"><button type="button" data-u="imp">fm · °F</button><button type="button" data-u="met">m · °C</button></div></div>
     <div class="head"><div style="min-width:0"><p class="who" id="vWho" hidden></p><h1 id="vTitle"></h1></div><span class="dot" id="status2"><i></i><span id="statusTxt2"></span></span></div>
     <div class="stats" id="stats"></div>
     <div class="strip"><div class="top"><span id="stripLbl">Squares in band by month</span><b id="tlSel"></b></div>
@@ -130,8 +134,8 @@ details[open] summary{color:var(--fg)}
           <li><a href="https://comet.nefsc.noaa.gov/erddap/tabledap/ocdbs_v_erddap1.html" target="_blank" rel="noopener">NOAA NEFSC ECOMON and survey CTD casts</a>: full water-column profiles.</li>
           <li><a href="https://gliders.ioos.us/erddap/index.html" target="_blank" rel="noopener">IOOS Glider DAC</a>: profiles from ocean gliders in the region (delayed-mode copies when available).</li>
         </ul>
-        <p><b>FIShBOT grid.</b> Readings are averaged onto NOAA's FIShBOT grid, the same 7 km (3.8 nm) squares FIShBOT uses, by calendar month. Bottom squares use the last 3 years; profiles use the last 12 months in 5 m layers. Tapping a square lists which sources fed it.</p>
-        <p><b>Model layer.</b> The DOPPIO model switch fills squares that have no observations with the <a href="https://tds.marine.rutgers.edu/thredds/catalog/roms/doppio/catalog.html" target="_blank" rel="noopener">DOPPIO</a> ocean model (Rutgers, 7 km, data assimilating), shown hatched, and adds them to the month bars as hatched segments. Monthly means come from daily model averages sampled weekly for bottom temperature (last 3 years) and every 10 days for profiles (last 12 months, top 150 m). Against the observations here, model bottom temperatures differ by about 1 °C on average.</p>
+        <p><b>FIShBOT grid.</b> Readings are averaged onto NOAA's FIShBOT grid, the same 7 km (3.8 nm) squares FIShBOT uses, by calendar month. Bottom squares and profiles both cover the last 3 years; profiles are in 5 m layers. Tapping a square lists which sources fed it.</p>
+        <p><b>Model layer.</b> The DOPPIO model switch fills squares that have no observations with the <a href="https://tds.marine.rutgers.edu/thredds/catalog/roms/doppio/catalog.html" target="_blank" rel="noopener">DOPPIO</a> ocean model (Rutgers, 7 km, data assimilating), shown hatched, and adds them to the month bars as hatched segments. Monthly means come from daily model averages sampled weekly for bottom temperature (last 3 years) and every 10 days for profiles (top 150 m), both over the last 3 years. Against the observations here, model bottom temperatures differ by about 1 °C on average.</p>
         <p><b>Target depth.</b> For midwater species the app interpolates each square's profile, finds where it is in the species' band, and reports the middle of the thickest in-band layer.</p>
         <p><b>Updated daily.</b> The files behind the map are rebuilt from these servers once a day. The dot at the top shows when.</p>
         <p><b>Depth contours</b> are GEBCO 2024 bathymetry, in fathoms.</p></div></details>
@@ -156,6 +160,13 @@ const APP_URL_DEFAULT='https://sedna-robotics.github.io/se-demo/';
 const NE_VIEW=[[-74.0,40.3],[-65.5,45.2]];
 const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const F=c=>c*9/5+32, FM=m=>Math.round(m/1.8288), fr=c=>Math.round(F(c));
+/* display units: 'imp' = fathoms and °F, 'met' = meters and °C (band checks always use the species' rounded °F band) */
+let UNITS=(()=>{try{return localStorage.getItem('stbm.units')==='met'?'met':'imp'}catch(e){return 'imp'}})();
+const MET=()=>UNITS==='met';
+const TU=()=>MET()?'°C':'°F', DU=()=>MET()?'m':'fm';
+const DT=(c,d=0)=>(MET()?c:F(c)).toFixed(d);                      // temperature for display
+const DD=m=>MET()?Math.round(m):FM(m);                             // depth for display
+const BAND=s=>MET()?`${s.lo} to ${s.hi} °C`:`${fr(s.lo)} to ${fr(s.hi)} °F`;
 const SP=[
  {id:'lobster',kind:'bottom',btn:'Lobster',name:'American lobster',lo:12,hi:18,note:'Lab preference near 61 °F; stress above 68 °F.',src:'ASMFC habitat fact sheet; Crossin, Jury and Watson 1998'},
  {id:'bsb',kind:'bottom',btn:'Sea bass',name:'Black sea bass',lo:10,hi:18,note:'Peak catch near 54 °F; habitat declines above 64 °F; move offshore at 50 to 54 °F; stop feeding below 43 °F.',src:'MAFMC 2024 ecosystem working paper; Slesinger et al. 2019'},
@@ -201,7 +212,7 @@ const colder=t=>{const g=fr(sp.lo)-fr(t);return g<=4?'c2':g<=9?'c1':'c0'};
    bottom rows: [y,m,la,lo,tempC,depthM,readings]   midwater rows: [y,m,la,lo,[tempC per 5 m layer]] */
 function ev(o){
   const k=o[2]+','+o[3];
-  if(sp.kind==='bottom'){ const t=o[4], inb=inBandC(t); return {k,la:o[2],lo:o[3],t,z:o[5],n:o[6],mask:o[7]||0,inb,cls:inb?'band':(fr(t)>fr(sp.hi)?'warm':colder(t)),label:fr(t),sub:o[5]==null?'':FM(o[5])+' fm'}; }
+  if(sp.kind==='bottom'){ const t=o[4], inb=inBandC(t); return {k,la:o[2],lo:o[3],t,z:o[5],n:o[6],mask:o[7]||0,inb,cls:inb?'band':(fr(t)>fr(sp.hi)?'warm':colder(t)),label:MET()?t.toFixed(1):fr(t),sub:o[5]==null?'':DD(o[5])+' '+DU()}; }
   const pts=[]; o[4].forEach((t,i)=>{if(t!=null)pts.push([i*DZ+DZ/2,t])});
   const zTop=pts[0][0], zBot=pts[pts.length-1][0];
   const lo=(fr(sp.lo)-0.5-32)*5/9, hi=(fr(sp.hi)+0.5-32)*5/9;
@@ -214,7 +225,7 @@ function ev(o){
     if((!ok||z+1>zBot+1e-6)&&run){ if(!best||run.bot-run.top>best.bot-best.top) best=run; run=null; }
   }
   const ts=pts.map(p=>p[1]), tmax=Math.max(...ts), tmin=Math.min(...ts);
-  if(best){ const c=(best.top+best.bot)/2; return {k,la:o[2],lo:o[3],mask:o[5]||0,inb:true,cls:'band',top:best.top,bot:best.bot,center:c,t:best.sum/best.n,z:zBot,surf:pts[0][1],deep:pts[pts.length-1][1],label:FM(c),sub:'fm'}; }
+  if(best){ const c=(best.top+best.bot)/2; return {k,la:o[2],lo:o[3],mask:o[5]||0,inb:true,cls:'band',top:best.top,bot:best.bot,center:c,t:best.sum/best.n,z:zBot,surf:pts[0][1],deep:pts[pts.length-1][1],label:DD(c),sub:DU()}; }
   const cls=tmin>hi?'warm':colder(tmax);
   return {k,la:o[2],lo:o[3],mask:o[5]||0,inb:false,cls,t:tmax,z:zBot,surf:pts[0][1],deep:pts[pts.length-1][1],label:'',sub:''};
 }
@@ -265,7 +276,7 @@ function layout(){
     baseG.selectAll('path.coast').data(B.coast).join('path').attr('class','coast').attr('d',s=>line(s.map(P))).attr('fill','none').attr('stroke','#f4ead2');
     contG.selectAll('path.iso').data(B.cont).join('path').attr('class','iso').attr('d',c=>line(c.c.map(P))).attr('fill','none').attr('stroke','#ffffff').attr('stroke-opacity',.35);
     const labs=[], minD=80/kRef; B.cont.forEach(c=>{ if(c.c.length<30) return; for(let i=Math.floor(c.c.length/2)%90;i<c.c.length;i+=90){ const p=P(c.c[i]); if(labs.every(l=>Math.hypot(l.p[0]-p[0],l.p[1]-p[1])>minD)) labs.push({fm:c.fm,p}); } });
-    contG.selectAll('text.isol').data(labs).join('text').attr('class','isol').attr('x',d=>d.p[0]).attr('y',d=>d.p[1]).attr('dy','0.35em').attr('text-anchor','middle').text(d=>d.fm+' fm');
+    contG.selectAll('text.isol').data(labs).join('text').attr('class','isol').attr('x',d=>d.p[0]).attr('y',d=>d.p[1]).attr('dy','0.35em').attr('text-anchor','middle').text(d=>MET()?Math.round(d.fm*1.8288)+' m':d.fm+' fm');
   }
   placeG.selectAll('text').data(PLACES).join('text').attr('class',d=>d[3]?'place sea':'place').attr('x',d=>P([d[2],d[1]])[0]).attr('y',d=>P([d[2],d[1]])[1]).attr('text-anchor','middle').text(d=>d[0]);
   drawCoverage(); drawAOI(); drawCells();
@@ -374,8 +385,9 @@ function speciesUI(){
     SP.filter(x=>x.kind===kind).forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x.btn;b.dataset.s=x.id;b.setAttribute('aria-pressed',x.id===sp.id);b.onclick=()=>setSpecies(x);row.appendChild(b)});
   }
 }
-$('aboutBands').innerHTML='<p>Each band is the temperature range where research finds the species most often or doing best. <b>Bottom species</b> are matched against each square\'s monthly mean bottom temperature. <b>Midwater species</b> are matched against the water column: a square is green when some layer of its monthly mean profile is in the band, and its number is the middle of the thickest in-band layer, in fathoms. That is the suggested target depth for nets, jigs or other gear.</p><ul>'+
-  SP.map(s=>`<li><b>${s.name}, ${fr(s.lo)} to ${fr(s.hi)} °F</b> (${s.kind==='mid'?'midwater':'bottom'}). ${s.note} Source: ${s.src}.</li>`).join('')+'</ul>';
+function bandsUI(){ $('aboutBands').innerHTML='<p>Each band is the temperature range where research finds the species most often or doing best. <b>Bottom species</b> are matched against each square\'s monthly mean bottom temperature. <b>Midwater species</b> are matched against the water column: a square is green when some layer of its monthly mean profile is in the band, and its number is the middle of the thickest in-band layer, in fathoms. That is the suggested target depth for nets, jigs or other gear.</p><ul>'+
+  SP.map(s=>`<li><b>${s.name}, ${BAND(s)}</b> (${s.kind==='mid'?'midwater':'bottom'}). ${s.note} Source: ${s.src}.</li>`).join('')+'</ul>'; }
+bandsUI();
 
 /* ---------- recent setups, for switching between people during a demo ---------- */
 function recentUI(){ if(!$('recent')) return;
@@ -410,6 +422,9 @@ function openView(){
   window.scrollTo({top:0});
 }
 $('go').onclick=openView;
+function unitsUI(){ document.querySelectorAll('#units button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.u===UNITS)); }
+document.querySelectorAll('#units button').forEach(b=>b.onclick=()=>{ if(UNITS===b.dataset.u) return; UNITS=b.dataset.u; try{localStorage.setItem('stbm.units',UNITS)}catch(e){} unitsUI(); bandsUI(); layout(); renderView(); });
+unitsUI();
 $('edit').onclick=()=>{showScreen('setup');recentUI();goTo(fitT(aoi),0);window.scrollTo({top:0});};
 function setHash(){try{const s={w:who,s:sp.id,n:aoiName,p:aoi.map(p=>[+p[0].toFixed(3),+p[1].toFixed(3)])};history.replaceState(null,'','#v='+encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(s))))))}catch(e){}}
 function clearHash(){try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}
@@ -437,7 +452,7 @@ function renderView(){
 }
 function legendUI(){
   const sw=(c,t)=>`<span><i class="sw" style="background:${FILL[c]}"></i>${t}</span>`;
-  $('legend').innerHTML=(isMid()?sw('band',`In-band layer ${fr(sp.lo)} to ${fr(sp.hi)} °F (number = target depth, fm)`):sw('band',`${fr(sp.lo)} to ${fr(sp.hi)} °F`))+`<span><i class="grad"></i>Colder</span>`+sw('warm','Warmer')+`<span><i class="sw" style="border:2px dashed #c9a400;box-sizing:border-box"></i>Your area</span>`
+  $('legend').innerHTML=(isMid()?sw('band',`In-band layer ${BAND(sp)} (number = target depth, ${DU()})`):sw('band',BAND(sp)))+`<span><i class="grad"></i>Colder</span>`+sw('warm','Warmer')+`<span><i class="sw" style="border:2px dashed #c9a400;box-sizing:border-box"></i>Your area</span>`
     +(MODEL.on?`<span><i class="sw" style="background:repeating-linear-gradient(135deg,#17a37f 0 3px,rgba(23,163,127,.35) 3px 6px)"></i>Hatched = DOPPIO model, no observations</span>`:'');
 }
 function selectMonth(key){ if(!monthStats(key).n&&!modelStats(key).n) return; [yr,mo]=key.split('-').map(Number); sel=null; drawCells(); drawTimeline(); statsUI(); cellReadout(); }
@@ -448,11 +463,11 @@ function statsUI(){
   const pct=s.n?Math.round(100*s.b/s.n):0, when=`${MO[mo-1]} ${yr}${key===latest?' (latest)':''}`;
   let second;
   if(isMid()){
-    const c=s.bands.map(x=>FM(x.center)), m=med(c);
-    second=`<div class="stat"><div class="k">Target depth</div><div class="v">${m==null?'None':m+' fm'}</div><div class="s">${c.length?`Median of squares · range ${Math.min(...c)} to ${Math.max(...c)} fm`:'No in-band water this month'}</div></div>`;
+    const c=s.bands.map(x=>DD(x.center)), m=med(c);
+    second=`<div class="stat"><div class="k">Target depth</div><div class="v">${m==null?'None':m+' '+DU()}</div><div class="s">${c.length?`Median of squares · range ${Math.min(...c)} to ${Math.max(...c)} ${DU()}`:'No in-band water this month'}</div></div>`;
   } else {
-    const inb=s.bands.filter(x=>x.z!=null).map(x=>FM(x.z)), mean=s.n?s.e.reduce((a,x)=>a+x.t,0)/s.n:null;
-    second=`<div class="stat"><div class="k">Band depth</div><div class="v">${inb.length?(Math.min(...inb)===Math.max(...inb)?inb[0]+' fm':Math.min(...inb)+' to '+Math.max(...inb)+' fm'):'None'}</div><div class="s">Area mean ${mean==null?'n/a':F(mean).toFixed(1)+' °F'}</div></div>`;
+    const inb=s.bands.filter(x=>x.z!=null).map(x=>DD(x.z)), mean=s.n?s.e.reduce((a,x)=>a+x.t,0)/s.n:null;
+    second=`<div class="stat"><div class="k">Band depth</div><div class="v">${inb.length?(Math.min(...inb)===Math.max(...inb)?inb[0]+' '+DU():Math.min(...inb)+' to '+Math.max(...inb)+' '+DU()):'None'}</div><div class="s">Area mean ${mean==null?'n/a':DT(mean,1)+' '+TU()}</div></div>`;
   }
   const ld=MODEL.on&&!MODEL.err&&!MODEL.rows.has(sp.kind+'|'+key)&&!MODEL.meta;
   const third=`<button type="button" class="stat mtog" id="tModel" aria-pressed="${MODEL.on}"><span class="sw2"><span class="knob"></span><span class="k">DOPPIO model</span></span><span class="s">${MODEL.err?'Could not load the model':MODEL.on?(ld?'Loading':'Hatched squares and bars'):'Fill unsampled squares'}</span></button>`;
@@ -516,13 +531,13 @@ function cellReadout(){
   if(!s){ $('read').textContent=(isMid()?'Tap a square for its in-band layer and water column.':'Tap a square for its temperature, depth and readings. Zoom in to see depths on the map.')+(MODEL.on&&MODEL.meta?` Hatched squares are the DOPPIO model (through ${MODEL.meta.through}).`:''); return; }
   if(s.model){
     const tag=`DOPPIO model, ${MO[mo-1]} ${yr} mean${MODEL.meta&&mkey(yr,mo)===MODEL.meta.through.slice(0,7)?` (through ${MODEL.meta.through})`:''}`;
-    if(isMid()) $('read').innerHTML=(s.inb?(FM(s.top)===FM(s.bot)?`Model: thin in-band layer near <b class="num">${FM(s.center)} fm</b>`:`Model: in band from <b class="num">${FM(s.top)} to ${FM(s.bot)} fm</b>, target about <b class="num">${FM(s.center)} fm</b>`)+` (about ${F(s.t).toFixed(0)} °F).`:`Model: no in-band layer.`)+` Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F · ${tag}`;
-    else $('read').innerHTML=`Model: <b class="num">${F(s.t).toFixed(1)} °F</b>${s.z==null?'':` at about <span class="num">${FM(s.z)}</span> fm (model depth)`} · ${tag}`;
+    if(isMid()) $('read').innerHTML=(s.inb?(DD(s.top)===DD(s.bot)?`Model: thin in-band layer near <b class="num">${DD(s.center)} ${DU()}</b>`:`Model: in band from <b class="num">${DD(s.top)} to ${DD(s.bot)} ${DU()}</b>, target about <b class="num">${DD(s.center)} ${DU()}</b>`)+` (about ${DT(s.t,0)} ${TU()}).`:`Model: no in-band layer.`)+` Surface ${DT(s.surf,0)} ${TU()}, ${DD(s.z)} ${DU()} ${DT(s.deep,0)} ${TU()} · ${tag}`;
+    else $('read').innerHTML=`Model: <b class="num">${DT(s.t,1)} ${TU()}</b>${s.z==null?'':` at about <span class="num">${DD(s.z)}</span> ${DU()} (model depth)`} · ${tag}`;
     return;
   }
-  if(isMid()) $('read').innerHTML=s.inb?(FM(s.top)===FM(s.bot)?`Only a thin in-band layer near <b class="num">${FM(s.center)} fm</b>${FM(s.bot)>=FM(s.z)?' (at the bottom)':''}`:`In band from <b class="num">${FM(s.top)} to ${FM(s.bot)} fm</b>, target about <b class="num">${FM(s.center)} fm</b>`)+` (about ${F(s.t).toFixed(0)} °F). Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F · ${MO[mo-1]} ${yr} · ${srcNames(s.mask)}`
-      :`No in-band layer in ${MO[mo-1]} ${yr}. Surface ${F(s.surf).toFixed(0)} °F, ${FM(s.z)} fm ${F(s.deep).toFixed(0)} °F · ${srcNames(s.mask)}`;
-  else $('read').innerHTML=`<b class="num">${F(s.t).toFixed(1)} °F</b>${s.z==null?'':` at about <span class="num">${FM(s.z)}</span> fm`} · <span class="num">${s.n.toLocaleString()}</span> readings in ${MO[mo-1]} ${yr} · ${srcNames(s.mask)}`;
+  if(isMid()) $('read').innerHTML=s.inb?(DD(s.top)===DD(s.bot)?`Only a thin in-band layer near <b class="num">${DD(s.center)} ${DU()}</b>${DD(s.bot)>=DD(s.z)?' (at the bottom)':''}`:`In band from <b class="num">${DD(s.top)} to ${DD(s.bot)} ${DU()}</b>, target about <b class="num">${DD(s.center)} ${DU()}</b>`)+` (about ${DT(s.t,0)} ${TU()}). Surface ${DT(s.surf,0)} ${TU()}, ${DD(s.z)} ${DU()} ${DT(s.deep,0)} ${TU()} · ${MO[mo-1]} ${yr} · ${srcNames(s.mask)}`
+      :`No in-band layer in ${MO[mo-1]} ${yr}. Surface ${DT(s.surf,0)} ${TU()}, ${DD(s.z)} ${DU()} ${DT(s.deep,0)} ${TU()} · ${srcNames(s.mask)}`;
+  else $('read').innerHTML=`<b class="num">${DT(s.t,1)} ${TU()}</b>${s.z==null?'':` at about <span class="num">${DD(s.z)}</span> ${DU()}`} · <span class="num">${s.n.toLocaleString()}</span> readings in ${MO[mo-1]} ${yr} · ${srcNames(s.mask)}`;
 }
 
 /* ---------- data: saved copy first, then the latest months live from ERDDAP via JSONP (no CORS headers there) ---------- */
